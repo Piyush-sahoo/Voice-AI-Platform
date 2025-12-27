@@ -1,0 +1,580 @@
+{
+    "info": {
+        "name": "LiveKit Voice AI Platform",
+        "_postman_id": "livekit-voice-platform-v1",
+        "description": "Complete API collection for the LiveKit Voice AI Platform - Outbound Calling System",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:8000",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "Health",
+            "item": [
+                {
+                    "name": "Health Check",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/health"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Assistants",
+            "description": "AI Assistant configuration management",
+            "item": [
+                {
+                    "name": "Create Assistant",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/assistants",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Sales Agent\",\n  \"instructions\": \"You are a friendly sales assistant. Introduce yourself and ask how you can help.\",\n  \"first_message\": \"Hello! This is Alex from Vobiz. How are you doing today?\",\n  \"voice\": {\n    \"provider\": \"openai\",\n    \"voice_id\": \"alloy\"\n  },\n  \"webhook_url\": \"https://your-webhook.com/events\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List Assistants",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/assistants?is_active=true&limit=50&skip=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "assistants"
+                            ],
+                            "query": [
+                                {
+                                    "key": "is_active",
+                                    "value": "true"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "skip",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Assistant",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/assistants/{{assistant_id}}"
+                    }
+                },
+                {
+                    "name": "Update Assistant",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{baseUrl}}/api/assistants/{{assistant_id}}",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated Sales Agent\",\n  \"instructions\": \"Updated instructions here\",\n  \"is_active\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Assistant",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{baseUrl}}/api/assistants/{{assistant_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Phone Numbers",
+            "description": "Phone number management",
+            "item": [
+                {
+                    "name": "Add Phone Number",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/phone-numbers",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"number\": \"+912271264280\",\n  \"label\": \"Main Line\",\n  \"provider\": \"vobiz\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List Phone Numbers",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/phone-numbers?is_active=true",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "phone-numbers"
+                            ],
+                            "query": [
+                                {
+                                    "key": "is_active",
+                                    "value": "true"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Phone Number",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/phone-numbers/{{phone_id}}"
+                    }
+                },
+                {
+                    "name": "Delete Phone Number",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{baseUrl}}/api/phone-numbers/{{phone_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "SIP Configs",
+            "description": "SIP trunk configuration with dynamic LiveKit trunk creation",
+            "item": [
+                {
+                    "name": "Create SIP Config (Auto Trunk)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/sip-configs",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Vobiz Production\",\n  \"sip_domain\": \"867a351f.sip.vobiz.ai\",\n  \"sip_username\": \"your_username\",\n  \"sip_password\": \"your_password\",\n  \"from_number\": \"+912271264280\",\n  \"is_default\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List SIP Configs",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/sip-configs?is_active=true",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "sip-configs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "is_active",
+                                    "value": "true"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get SIP Config",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/sip-configs/{{sip_id}}"
+                    }
+                },
+                {
+                    "name": "Update SIP Config",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{baseUrl}}/api/sip-configs/{{sip_id}}",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated SIP Config\",\n  \"is_default\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete SIP Config",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{baseUrl}}/api/sip-configs/{{sip_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Calls",
+            "description": "Outbound call management",
+            "item": [
+                {
+                    "name": "Create Call",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/calls",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"phone_number\": \"+919148227303\",\n  \"assistant_id\": \"asst_xxx\",\n  \"sip_id\": \"sip_xxx\",\n  \"instructions\": \"Custom instructions for this call\",\n  \"webhook_url\": \"https://your-webhook.com/call-events\",\n  \"metadata\": {\n    \"customer_id\": \"12345\",\n    \"campaign\": \"december_promo\"\n  }\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Create Simple Call",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/calls",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"phone_number\": \"+919148227303\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List Calls",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/calls?status=completed&limit=50&skip=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "calls"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "completed"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "skip",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Call Details",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/calls/{{call_id}}"
+                    }
+                },
+                {
+                    "name": "Get Call Analysis",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/calls/{{call_id}}/analysis"
+                    }
+                },
+                {
+                    "name": "Trigger Analysis (Gemini)",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/calls/{{call_id}}/analyze"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Campaigns",
+            "description": "Batch calling campaigns",
+            "item": [
+                {
+                    "name": "Create Campaign",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/campaigns",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"December Promo Campaign\",\n  \"description\": \"Holiday promotional calls\",\n  \"assistant_id\": \"asst_xxx\",\n  \"sip_id\": \"sip_xxx\",\n  \"contacts\": [\n    {\"phone_number\": \"+919148227303\", \"name\": \"John Doe\", \"variables\": {\"promo_code\": \"HOLIDAY25\"}},\n    {\"phone_number\": \"+919876543210\", \"name\": \"Jane Smith\"}\n  ],\n  \"max_concurrent_calls\": 2,\n  \"retry_failed\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List Campaigns",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/campaigns?status=draft&limit=50&skip=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "campaigns"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "draft"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "skip",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Campaign",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}"
+                    }
+                },
+                {
+                    "name": "Get Campaign Stats",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}/stats"
+                    }
+                },
+                {
+                    "name": "Update Campaign",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Updated Campaign Name\",\n  \"max_concurrent_calls\": 5\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Start Campaign",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}/start"
+                    }
+                },
+                {
+                    "name": "Pause Campaign",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}/pause"
+                    }
+                },
+                {
+                    "name": "Cancel Campaign",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}/cancel"
+                    }
+                },
+                {
+                    "name": "Delete Campaign",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{baseUrl}}/api/campaigns/{{campaign_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Tools",
+            "description": "Custom function calling tools",
+            "item": [
+                {
+                    "name": "Create Tool",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/tools",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"check_appointment\",\n  \"description\": \"Check available appointment slots for a customer\",\n  \"type\": \"webhook\",\n  \"webhook_url\": \"https://your-api.com/appointments/check\",\n  \"http_method\": \"POST\",\n  \"headers\": {\n    \"Authorization\": \"Bearer your-api-key\"\n  },\n  \"parameters\": [\n    {\"name\": \"customer_id\", \"type\": \"string\", \"description\": \"Customer ID\", \"required\": true},\n    {\"name\": \"date\", \"type\": \"string\", \"description\": \"Preferred date (YYYY-MM-DD)\", \"required\": false}\n  ],\n  \"speak_response\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "List Tools",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/tools?is_active=true",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "tools"
+                            ],
+                            "query": [
+                                {
+                                    "key": "is_active",
+                                    "value": "true"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Tool",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/tools/{{tool_id}}"
+                    }
+                },
+                {
+                    "name": "Update Tool",
+                    "request": {
+                        "method": "PATCH",
+                        "url": "{{baseUrl}}/api/tools/{{tool_id}}",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"description\": \"Updated description\",\n  \"is_active\": true\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Test Tool",
+                    "request": {
+                        "method": "POST",
+                        "url": "{{baseUrl}}/api/tools/{{tool_id}}/test",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"customer_id\": \"12345\",\n  \"date\": \"2024-12-30\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Tool",
+                    "request": {
+                        "method": "DELETE",
+                        "url": "{{baseUrl}}/api/tools/{{tool_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Analytics",
+            "description": "Call analytics and dashboard statistics",
+            "item": [
+                {
+                    "name": "Get Call Analytics",
+                    "request": {
+                        "method": "GET",
+                        "url": "{{baseUrl}}/api/analytics/calls"
+                    }
+                },
+                {
+                    "name": "Get Daily Summary",
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/api/analytics/summary?days=7",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "analytics",
+                                "summary"
+                            ],
+                            "query": [
+                                {
+                                    "key": "days",
+                                    "value": "7"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,25 @@
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+
+# Build output
+dist/
+build/
+*.egg-info/
+
+# Tests & Logs
+test_*.json
+*.log
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db

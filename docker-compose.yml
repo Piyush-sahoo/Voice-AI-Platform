@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # ===================
+  # FRONTEND
+  # ===================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vobiz-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - vobiz-network
+
+  # ===================
+  # BACKEND API
+  # ===================
+  api:
+    build:
+      context: ./livekit-outbound-calls
+      dockerfile: Dockerfile
+    container_name: vobiz-api
+    command: python run_server.py
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./livekit-outbound-calls/.env.local
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - vobiz-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===================
+  # LIVEKIT AGENT
+  # ===================
+  agent:
+    build:
+      context: ./livekit-outbound-calls
+      dockerfile: Dockerfile
+    container_name: vobiz-agent
+    command: python run_agent.py start
+    env_file:
+      - ./livekit-outbound-calls/.env.local
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - vobiz-network
+
+  # ===================
+  # REDIS (Queue & Cache)
+  # ===================
+  redis:
+    image: redis:7-alpine
+    container_name: vobiz-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - vobiz-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===================
+  # CELERY WORKER (Job Queue)
+  # ===================
+  celery-worker:
+    build:
+      context: ./livekit-outbound-calls
+      dockerfile: Dockerfile
+    container_name: vobiz-celery
+    command: celery -A tasks_queue.celery_app worker --loglevel=info --concurrency=4
+    env_file:
+      - ./livekit-outbound-calls/.env.local
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - vobiz-network
+
+  # ===================
+  # MONGODB (Optional - Comment out if using MongoDB Atlas)
+  # ===================
+  # mongodb:
+  #   image: mongo:7
+  #   container_name: vobiz-mongodb
+  #   ports:
+  #     - "27017:27017"
+  #   volumes:
+  #     - mongodb_data:/data/db
+  #   restart: unless-stopped
+  #   networks:
+  #     - vobiz-network
+
+# ===================
+# VOLUMES
+# ===================
+volumes:
+  # mongodb_data:  # Uncomment if using local MongoDB
+  redis_data:
+
+# ===================
+# NETWORKS
+# ===================
+networks:
+  vobiz-network:
+    driver: bridge

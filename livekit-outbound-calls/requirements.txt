@@ -1,0 +1,30 @@
+# LiveKit Agents with OpenAI Realtime support
+livekit-agents[openai]~=1.3
+livekit-api>=0.6.0
+livekit-plugins-noise-cancellation
+python-dotenv>=1.0.0
+
+# REST API
+fastapi>=0.109.0
+uvicorn>=0.27.0
+httpx>=0.26.0
+
+# Database
+motor>=3.3.0
+pymongo>=4.6.0
+pydantic[email]>=2.5.0
+
+# Redis & Queue
+redis>=5.0.0
+celery[redis]>=5.3.0
+
+# Authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# AI Analysis
+google-generativeai>=0.3.0
+boto3>=1.34.0
+
+
+
