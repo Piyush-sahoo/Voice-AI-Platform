@@ -1,0 +1,41 @@
+{
+    "name": "Open Source Voice Agent Platform",
+    "logo": {
+        "light": "/logo/light.svg",
+        "dark": "/logo/dark.svg"
+    },
+    "favicon": "/favicon.png",
+    "colors": {
+        "primary": "#3B82F6",
+        "light": "#64748B",
+        "dark": "#0F172A",
+        "anchors": "#3B82F6"
+    },
+    "topbarLinks": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/Piyush-sahoo/Voice-AI-Platform"
+        }
+    ],
+    "navigation": [
+        {
+            "group": "Getting Started",
+            "pages": [
+                "introduction",
+                "quickstart",
+                "architecture"
+            ]
+        },
+        {
+            "group": "API Reference",
+            "pages": [
+                "api-reference/authentication",
+                "api-reference/assistants",
+                "api-reference/calls",
+                "api-reference/sip-telephony",
+                "api-reference/analytics"
+            ]
+        }
+    ],
+    "openapi": "openapi.json"
+}

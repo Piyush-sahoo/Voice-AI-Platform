@@ -1,0 +1,80 @@
+---
+title: Quickstart
+description: 'Get up and running in minutes with Docker'
+---
+
+# Quick Start Guide
+
+This guide will help you set up the Voice Agent Platform on your local machine using Docker Compose.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
+- [Git](https://git-scm.com/) installed
+- Accounts for:
+  - **LiveKit** (Cloud or Self-hosted)
+  - **Vobiz** (For Telephony)
+  - **OpenAI** (or provider of choice)
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/Piyush-sahoo/Voice-AI-Platform.git
+cd Voice-AI-Platform
+```
+
+## 2. Configure Environment
+
+The platform uses a unified environment file for simplicity in development.
+
+```bash
+# Copy the example env file
+cp backend/.env.example backend/.env.local
+```
+
+Open `backend/.env.local` and populate your keys:
+
+```ini
+# LiveKit Configuration
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_api_key
+LIVEKIT_API_SECRET=your_api_secret
+
+# AI Providers
+OPENAI_API_KEY=sk-...
+DEEPGRAM_API_KEY=...
+
+# Database
+MONGO_URI=mongodb://mongo:27017/vobiz
+
+# Vobiz Telephony (SIP)
+SIP_OUTBOUND_TRUNK_ID=...
+```
+
+## 3. Start Services
+
+Run the entire stack with Docker Compose:
+
+```bash
+docker-compose up -d --build
+```
+
+This may take a few minutes the first time as it downloads images and builds the Python services.
+
+## 4. Verify Installation
+
+Once running, access the services:
+
+- **Frontend Dashboard**: [http://localhost:3000](http://localhost:3000)
+- **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Run Automation Test
+To verify everything is working correctly, run the included test script:
+
+```bash
+python scripts/full_api_automation.py
+```
+
+You should see a series of green checks ✅ validationg the Agents, Database, and SIP connection.

@@ -28,16 +28,16 @@ The platform is designed as a modern microservices system:
 
 ```mermaid
 graph TD
-    Client[Frontend / API Client] --> Gateway[API Gateway (Port 8000)]
-    Gateway --> ConfigService[Config Service (Port 8002)]
-    Gateway --> AnalyticsService[Analytics Service (Port 8001)]
-    Gateway --> OrchestrationService[Orchestration Service (Port 8003)]
+    Client["Frontend / API Client"] --> Gateway["API Gateway (Port 8000)"]
+    Gateway --> ConfigService["Config Service (Port 8002)"]
+    Gateway --> AnalyticsService["Analytics Service (Port 8001)"]
+    Gateway --> OrchestrationService["Orchestration Service (Port 8003)"]
     
-    OrchestrationService --> Redis[Redis Queue]
-    Redis --> Worker[Agent Worker]
-    Worker --> LiveKit[LiveKit Server]
-    LiveKit --> Vobiz[Vobiz Telephony]
-    Vobiz --> Phone[PSTN Network]
+    OrchestrationService --> Redis["Redis Queue"]
+    Redis --> Worker["Agent Worker"]
+    Worker --> LiveKit["LiveKit Server"]
+    LiveKit --> Vobiz["Vobiz Telephony"]
+    Vobiz --> Phone["PSTN Network"]
 ```
 
 ### Core Services
