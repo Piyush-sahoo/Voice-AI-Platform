@@ -36,7 +36,7 @@ const navigation = [
 ];
 
 const bottomNavigation = [
-  { name: "Documentation", href: "http://localhost:8000/docs", icon: FileText },
+  { name: "Documentation", href: "http://localhost:3001/Voice-AI-Platform/", icon: FileText },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
