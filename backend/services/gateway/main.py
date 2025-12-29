@@ -66,6 +66,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
+    # Add Rate Limiting
+    from shared.middleware.rate_limiter import RateLimitMiddleware, rate_limiter
+    app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+    
     # Register routers
     from gateway.routers import calls, health, assistants, phone_numbers, sip_configs, campaigns, tools, job_queue, auth
     from shared.auth.dependencies import get_current_user

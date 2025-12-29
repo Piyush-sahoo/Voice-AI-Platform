@@ -220,24 +220,15 @@ async def entrypoint(ctx: agents.JobContext):
     async def on_shutdown():
         """Handle cleanup when call ends."""
         try:
-            current_date = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            
-            # Save transcript locally
-            logs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
-            os.makedirs(logs_dir, exist_ok=True)
-            
+            # Get transcript data
             transcript_data = session.history.to_dict()
-            transcript_file = os.path.join(logs_dir, f"transcript_{call_id}_{current_date}.json")
-            with open(transcript_file, 'w') as f:
-                json.dump(transcript_data, f, indent=2)
-            logger.info(f"Transcript saved to {transcript_file}")
+            logger.info(f"Call {call_id} ended. Transcript has {len(transcript_data.get('messages', []))} messages.")
             
-            # Update database
+            # Update database with transcript (no local file storage for container scalability)
             await update_call_in_db(call_id, {
                 "status": "completed",
                 "ended_at": datetime.now(timezone.utc),
                 "transcript": transcript_data,
-                "transcript_url": transcript_file,
             })
             
             # Send webhook
