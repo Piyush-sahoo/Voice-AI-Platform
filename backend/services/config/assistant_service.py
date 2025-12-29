@@ -71,6 +71,12 @@ class AssistantService:
         skip: int = 0,
     ) -> List[Assistant]:
         """List assistants with optional filters."""
+        # Check cache first (only for default query without pagination)
+        if workspace_id and is_active is None and skip == 0 and limit >= 50:
+            cached = await SessionCache.get_assistants(workspace_id)
+            if cached:
+                return [Assistant.from_dict(a) for a in cached[:limit]]
+        
         db = get_database()
         
         query = {}
@@ -82,8 +88,16 @@ class AssistantService:
         cursor = db.assistants.find(query).sort("created_at", -1).skip(skip).limit(limit)
         
         assistants = []
+        docs = []
         async for doc in cursor:
+            if "_id" in doc:
+                del doc["_id"]
+            docs.append(doc)
             assistants.append(Assistant.from_dict(doc))
+        
+        # Cache the result (only for default query)
+        if workspace_id and is_active is None and skip == 0 and docs:
+            await SessionCache.cache_assistants(workspace_id, docs)
         
         return assistants
     

@@ -124,10 +124,20 @@ class AuthService:
                 "workspace_id": user.workspace_id,
                 "role": user.role,
             }
+            
+            # Fetch workspace data
+            workspace_doc = await db.workspaces.find_one({"workspace_id": user.workspace_id})
+            workspace_cache_data = None
+            if workspace_doc:
+                if "_id" in workspace_doc:
+                    del workspace_doc["_id"]
+                workspace_cache_data = workspace_doc
+            
             await SessionCache.preload_session(
                 user.user_id, 
                 user.workspace_id, 
-                user_cache_data
+                user_cache_data,
+                workspace_cache_data
             )
         except Exception as e:
             # Don't fail login if cache fails
@@ -163,6 +173,23 @@ class AuthService:
         
         # Generate new tokens
         return AuthService._create_tokens(user)
+    
+    @staticmethod
+    async def logout(user_id: str) -> bool:
+        """
+        Logout user and invalidate session cache.
+        
+        Returns:
+            True if session was invalidated
+        """
+        try:
+            from shared.cache import SessionCache
+            await SessionCache.invalidate_session(user_id)
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger("auth").warning(f"Session invalidation failed: {e}")
+            return False
     
     @staticmethod
     async def get_user_by_id(user_id: str) -> Optional[User]:

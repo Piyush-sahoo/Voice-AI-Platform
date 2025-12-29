@@ -45,6 +45,12 @@ class PhoneNumberService:
     @staticmethod
     async def list_phone_numbers(workspace_id: str = None, is_active: Optional[bool] = None) -> List[PhoneNumber]:
         """List all phone numbers, scoped by workspace."""
+        # Check cache first (only for default query)
+        if workspace_id and is_active is None:
+            cached = await SessionCache.get_phones(workspace_id)
+            if cached:
+                return [PhoneNumber.from_dict(p) for p in cached]
+        
         db = get_database()
         
         query = {}
@@ -56,8 +62,16 @@ class PhoneNumberService:
         cursor = db.phone_numbers.find(query).sort("created_at", -1)
         
         phones = []
+        docs = []
         async for doc in cursor:
+            if "_id" in doc:
+                del doc["_id"]
+            docs.append(doc)
             phones.append(PhoneNumber.from_dict(doc))
+        
+        # Cache the result (only for default query)
+        if workspace_id and is_active is None and docs:
+            await SessionCache.cache_phones(workspace_id, docs)
         
         return phones
     

@@ -88,6 +88,17 @@ async def refresh_token(request: RefreshRequest):
     return tokens
 
 
+@router.post("/logout")
+async def logout(user: User = Depends(require_auth)):
+    """
+    Logout user and invalidate session cache.
+    
+    Clears all cached data for the user from Redis.
+    """
+    await AuthService.logout(user.user_id)
+    return {"message": "Logged out successfully"}
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(user: User = Depends(require_auth)):
     """

@@ -198,6 +198,12 @@ class CallService:
         workspace_id: Optional[str] = None,
     ) -> List[CallRecord]:
         """List calls with optional filters, scoped by workspace (with legacy support)."""
+        # Check cache first (only for default query without filters)
+        if workspace_id and status is None and phone_number is None and skip == 0:
+            cached = await SessionCache.get_recent_calls(workspace_id)
+            if cached:
+                return [CallRecord.from_dict(c) for c in cached[:limit]]
+        
         db = get_database()
         
         # Build query with workspace filter (backwards compatible)
@@ -218,8 +224,16 @@ class CallService:
         cursor = db.calls.find(query).sort("created_at", -1).skip(skip).limit(limit)
         
         calls = []
+        docs = []
         async for doc in cursor:
+            if "_id" in doc:
+                del doc["_id"]
+            docs.append(doc)
             calls.append(CallRecord.from_dict(doc))
+        
+        # Cache the result (only for default query)
+        if workspace_id and status is None and phone_number is None and skip == 0 and docs:
+            await SessionCache.cache_recent_calls(workspace_id, docs)
         
         return calls
     

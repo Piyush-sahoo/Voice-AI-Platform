@@ -236,6 +236,20 @@ class SessionCache:
             except Exception as e:
                 logger.warning(f"Failed to preload campaigns: {e}")
             
+            # 8. Fetch and cache tools
+            try:
+                tools_cursor = db.tools.find({"is_active": True}).sort("created_at", -1)
+                tools = []
+                async for doc in tools_cursor:
+                    if "_id" in doc:
+                        del doc["_id"]
+                    tools.append(doc)
+                if tools:
+                    await cls.set(f"ws:{workspace_id}:tools", tools, TTL_CONFIG)
+                    logger.debug(f"Cached {len(tools)} tools for workspace:{workspace_id}")
+            except Exception as e:
+                logger.warning(f"Failed to preload tools: {e}")
+            
             logger.info(f"Session FULLY preloaded for user:{user_id}, workspace:{workspace_id}")
             
         except Exception as e:
