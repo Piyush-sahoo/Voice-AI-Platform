@@ -109,6 +109,7 @@ export const callsApi = {
 export const phoneNumbersApi = {
     list: () => api.get<{ phone_numbers: unknown[]; count: number }>("/api/phone-numbers"),
     create: (data: unknown) => api.post<unknown>("/api/phone-numbers", data),
+    createInbound: (data: unknown) => api.post<unknown>("/api/phone-numbers/inbound", data),
     delete: (id: string) => api.delete<unknown>(`/api/phone-numbers/${id}`),
 };
 

@@ -9,6 +9,7 @@ from shared.database.models import (
     PhoneNumber,
     SipConfig,
     CreatePhoneNumberRequest,
+    CreateInboundNumberRequest,
     CreateSipConfigRequest,
     UpdateSipConfigRequest,
 )
@@ -97,6 +98,145 @@ class PhoneNumberService:
         result = await db.phone_numbers.delete_one(query)
         if result.deleted_count > 0:
             # Invalidate phones cache
+            if workspace_id:
+                await SessionCache.invalidate_phones(workspace_id)
+            return True
+        return False
+    
+    @staticmethod
+    async def create_inbound_number(request: CreateInboundNumberRequest, workspace_id: str = None) -> PhoneNumber:
+        """
+        Create an inbound phone number with LiveKit trunk and dispatch rule.
+        This enables automatic agent dispatch for incoming calls.
+        """
+        from livekit import api
+        from livekit.protocol import sip as sip_proto
+        from shared.settings import config
+        
+        db = get_database()
+        
+        # Connect to LiveKit API
+        lk_api = api.LiveKitAPI(
+            url=config.LIVEKIT_URL,
+            api_key=config.LIVEKIT_API_KEY,
+            api_secret=config.LIVEKIT_API_SECRET,
+        )
+        
+        try:
+            # 1. Create Inbound Trunk
+            logger.info(f"Creating inbound trunk for {request.number}")
+            trunk = await lk_api.sip.create_sip_inbound_trunk(
+                api.CreateSIPInboundTrunkRequest(
+                    trunk=api.SIPInboundTrunkInfo(
+                        name=f"Inbound-{request.number}",
+                        numbers=[request.number],
+                        allowed_addresses=request.allowed_addresses,
+                        krisp_enabled=request.krisp_enabled,
+                    )
+                )
+            )
+            trunk_id = trunk.sip_trunk_id
+            logger.info(f"Created inbound trunk: {trunk_id}")
+            
+            # 2. Create Dispatch Rule linking to agent
+            logger.info(f"Creating dispatch rule for agent")
+            dispatch_rule = sip_proto.SIPDispatchRuleInfo(
+                name=f"Dispatch-{request.number}",
+                trunk_ids=[trunk_id],
+                rule=sip_proto.SIPDispatchRule(
+                    dispatch_rule_individual=sip_proto.SIPDispatchRuleIndividual(
+                        room_prefix="call-",
+                    )
+                ),
+            )
+            # Set room config with agent dispatch
+            dispatch_rule.room_config.CopyFrom(
+                api.RoomConfiguration(
+                    agents=[api.RoomAgentDispatch(agent_name="voice-assistant")]
+                )
+            )
+            
+            result = await lk_api.sip.create_sip_dispatch_rule(
+                api.CreateSIPDispatchRuleRequest(dispatch_rule=dispatch_rule)
+            )
+            dispatch_rule_id = result.sip_dispatch_rule_id
+            logger.info(f"Created dispatch rule: {dispatch_rule_id}")
+            
+            # 3. Save to database
+            phone = PhoneNumber(
+                workspace_id=workspace_id,
+                number=request.number,
+                label=request.label,
+                provider=request.provider,
+                direction="inbound",
+                assistant_id=request.assistant_id,
+                inbound_trunk_id=trunk_id,
+                dispatch_rule_id=dispatch_rule_id,
+                allowed_addresses=request.allowed_addresses,
+                krisp_enabled=request.krisp_enabled,
+            )
+            
+            await db.phone_numbers.insert_one(phone.to_dict())
+            logger.info(f"Inbound number saved: {phone.phone_id}")
+            
+            # Invalidate cache
+            if workspace_id:
+                await SessionCache.invalidate_phones(workspace_id)
+            
+            return phone
+            
+        finally:
+            await lk_api.aclose()
+    
+    @staticmethod
+    async def delete_inbound_number(phone_id: str, workspace_id: str = None) -> bool:
+        """Delete an inbound phone number and its LiveKit resources."""
+        from livekit import api
+        from shared.settings import config
+        
+        db = get_database()
+        
+        # Get the phone number first
+        query = {"phone_id": phone_id}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        doc = await db.phone_numbers.find_one(query)
+        
+        if not doc:
+            return False
+        
+        phone = PhoneNumber.from_dict(doc)
+        
+        # Delete LiveKit resources if they exist
+        if phone.dispatch_rule_id or phone.inbound_trunk_id:
+            try:
+                lk_api = api.LiveKitAPI(
+                    url=config.LIVEKIT_URL,
+                    api_key=config.LIVEKIT_API_KEY,
+                    api_secret=config.LIVEKIT_API_SECRET,
+                )
+                
+                # Delete dispatch rule first
+                if phone.dispatch_rule_id:
+                    await lk_api.sip.delete_sip_dispatch_rule(
+                        api.DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=phone.dispatch_rule_id)
+                    )
+                    logger.info(f"Deleted dispatch rule: {phone.dispatch_rule_id}")
+                
+                # Then delete trunk
+                if phone.inbound_trunk_id:
+                    await lk_api.sip.delete_sip_trunk(
+                        api.DeleteSIPTrunkRequest(sip_trunk_id=phone.inbound_trunk_id)
+                    )
+                    logger.info(f"Deleted inbound trunk: {phone.inbound_trunk_id}")
+                
+                await lk_api.aclose()
+            except Exception as e:
+                logger.error(f"Error cleaning up LiveKit resources: {e}")
+        
+        # Delete from database
+        result = await db.phone_numbers.delete_one(query)
+        if result.deleted_count > 0:
             if workspace_id:
                 await SessionCache.invalidate_phones(workspace_id)
             return True

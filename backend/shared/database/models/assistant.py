@@ -8,9 +8,33 @@ import uuid
 
 
 class VoiceConfig(BaseModel):
-    """Voice configuration for an assistant."""
-    provider: str = "openai"
-    voice_id: str = "alloy"
+    """
+    Voice configuration for an assistant.
+    Supports both Realtime (speech-to-speech) and Pipeline (STT→LLM→TTS) modes.
+    """
+    # Voice settings
+    voice_id: str = "alloy"  # Voice ID for TTS
+    
+    # Mode: "realtime" (speech-to-speech) or "pipeline" (STT→LLM→TTS)
+    mode: str = "realtime"
+    
+    # === Realtime Mode (Speech-to-Speech) ===
+    realtime_provider: str = "openai"  # openai, google
+    realtime_model: str = "gpt-4o-realtime-preview"
+    
+    # === Pipeline Mode ===
+    # STT (Speech-to-Text)
+    stt_provider: str = "deepgram"  # deepgram, openai, assemblyai
+    stt_model: str = "nova-2"  # nova-2, nova-3, whisper-1
+    stt_language: str = "en"
+    
+    # LLM (Large Language Model)
+    llm_provider: str = "openai"  # openai, anthropic, google, groq
+    llm_model: str = "gpt-4o-mini"  # gpt-4o, gpt-4o-mini, claude-3-5-sonnet, gemini-1.5-pro
+    
+    # TTS (Text-to-Speech)
+    tts_provider: str = "elevenlabs"  # elevenlabs, openai, cartesia, deepgram
+    tts_model: str = "eleven_turbo_v2_5"  # eleven_turbo_v2_5, tts-1, sonic-3, aura
 
 
 class ToolDefinition(BaseModel):

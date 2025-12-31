@@ -43,6 +43,41 @@ export const languageOptions = [
   { id: "zh-CN", name: "Chinese (Simplified)" },
 ];
 
+// Voice AI Mode Options
+export const modeOptions = [
+  { id: "realtime", name: "Realtime (Speech-to-Speech)", description: "Lowest latency, OpenAI/Gemini" },
+  { id: "pipeline", name: "Pipeline (STT→LLM→TTS)", description: "More flexible, mix providers" },
+];
+
+// STT Provider Options
+export const sttProviderOptions = [
+  { id: "deepgram", name: "Deepgram", models: ["nova-2", "nova-3", "enhanced"] },
+  { id: "openai", name: "OpenAI", models: ["whisper-1", "gpt-4o-transcribe"] },
+  { id: "assemblyai", name: "AssemblyAI", models: ["universal"] },
+];
+
+// LLM Provider Options
+export const llmProviderOptions = [
+  { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"] },
+  { id: "anthropic", name: "Anthropic", models: ["claude-3-5-sonnet", "claude-3-opus"] },
+  { id: "google", name: "Google", models: ["gemini-1.5-pro", "gemini-1.5-flash"] },
+  { id: "groq", name: "Groq", models: ["llama-3.1-70b", "mixtral-8x7b"] },
+];
+
+// TTS Provider Options
+export const ttsProviderOptions = [
+  { id: "openai", name: "OpenAI", models: ["tts-1", "tts-1-hd"] },
+  { id: "elevenlabs", name: "ElevenLabs", models: ["eleven_turbo_v2_5", "eleven_multilingual_v2"] },
+  { id: "cartesia", name: "Cartesia", models: ["sonic-3"] },
+  { id: "deepgram", name: "Deepgram", models: ["aura-asteria-en"] },
+];
+
+// Realtime Provider Options
+export const realtimeProviderOptions = [
+  { id: "openai", name: "OpenAI Realtime", models: ["gpt-4o-realtime-preview"] },
+  { id: "google", name: "Gemini Live", models: ["gemini-2.0-flash-live"] },
+];
+
 export const mockAgents: Agent[] = [
   {
     id: "agent-1",

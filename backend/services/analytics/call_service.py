@@ -130,8 +130,22 @@ class CallService:
             # Add assistant-specific config
             if assistant_config:
                 metadata_dict["first_message"] = assistant_config.get("first_message")
-                metadata_dict["voice_id"] = assistant_config.get("voice_id", "alloy")
                 metadata_dict["temperature"] = assistant_config.get("temperature", 0.8)
+                
+                # Pass full voice_config for user-selectable models
+                voice = assistant_config.get("voice", {})
+                if voice:
+                    # Convert voice config to dict if it's a model
+                    if hasattr(voice, "model_dump"):
+                        voice_config = voice.model_dump()
+                    else:
+                        voice_config = voice if isinstance(voice, dict) else {}
+                    
+                    metadata_dict["voice_config"] = voice_config
+                    # Legacy fallback
+                    metadata_dict["voice_id"] = voice_config.get("voice_id", "alloy")
+                else:
+                    metadata_dict["voice_id"] = "alloy"
             
             metadata = json.dumps(metadata_dict)
             

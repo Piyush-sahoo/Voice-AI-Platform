@@ -14,6 +14,20 @@ class PhoneNumber(BaseModel):
     number: str  # E.164 format
     label: Optional[str] = None  # e.g., "Main Sales Line"
     provider: str = "vobiz"
+    
+    # Call direction: "inbound" | "outbound" | "both"
+    direction: str = "outbound"
+    
+    # Inbound-specific fields
+    assistant_id: Optional[str] = None  # Agent that answers inbound calls
+    inbound_trunk_id: Optional[str] = None  # LiveKit inbound trunk ID
+    dispatch_rule_id: Optional[str] = None  # LiveKit dispatch rule ID
+    allowed_addresses: list = Field(default_factory=lambda: ["0.0.0.0/0"])  # IP whitelist
+    krisp_enabled: bool = True  # Noise cancellation
+    
+    # Outbound-specific fields
+    sip_config_id: Optional[str] = None  # SIP config for outbound calls
+    
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
@@ -69,9 +83,20 @@ class SipConfig(BaseModel):
 
 # Request/Response models
 class CreatePhoneNumberRequest(BaseModel):
-    """Request to add a phone number."""
+    """Request to add a phone number (outbound)."""
     number: str
     label: Optional[str] = None
+    provider: str = "vobiz"
+    sip_config_id: Optional[str] = None  # SIP config for outbound
+
+
+class CreateInboundNumberRequest(BaseModel):
+    """Request to set up an inbound phone number."""
+    number: str  # E.164 format
+    label: Optional[str] = None
+    assistant_id: str  # Required: which agent answers calls
+    allowed_addresses: list = ["0.0.0.0/0"]  # IP whitelist
+    krisp_enabled: bool = True  # Noise cancellation
     provider: str = "vobiz"
 
 

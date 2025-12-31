@@ -12,6 +12,7 @@ from .phone_sip import (
     PhoneNumber,
     SipConfig,
     CreatePhoneNumberRequest,
+    CreateInboundNumberRequest,
     CreateSipConfigRequest,
     UpdateSipConfigRequest,
 )

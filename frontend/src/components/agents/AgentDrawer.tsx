@@ -21,19 +21,35 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { voiceOptions, modelOptions, languageOptions } from "@/data/mockAgents";
+import { voiceOptions, languageOptions, modeOptions, sttProviderOptions, llmProviderOptions, ttsProviderOptions, realtimeProviderOptions } from "@/data/mockAgents";
 import { Volume2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
+// Extended voice configuration for backend
+interface VoiceConfig {
+  provider: string;
+  voice_id: string;
+  mode?: string;
+  realtime_provider?: string;
+  realtime_model?: string;
+  stt_provider?: string;
+  stt_model?: string;
+  stt_language?: string;
+  llm_provider?: string;
+  llm_model?: string;
+  tts_provider?: string;
+  tts_model?: string;
+}
 
 // Compatible with backend Assistant model
 interface Agent {
   assistant_id?: string;
   name: string;
   description?: string;
-  instructions: string; // The "Prompt"
+  instructions: string;
   model_provider?: string;
-  model_name?: string; // e.g. gpt-4
-  voice?: { provider: string; voice_id: string }; // We'll simplify this for UI state
+  model_name?: string;
+  voice?: VoiceConfig;
   language?: string;
   temperature?: number;
   first_message?: string;
@@ -45,11 +61,22 @@ interface AgentFormData {
   name: string;
   description: string;
   instructions: string;
-  model: string;
   voice: string;
   language: string;
   first_message: string;
   temperature: number;
+  // Voice AI Mode
+  mode: string;
+  // Realtime mode
+  realtime_provider: string;
+  realtime_model: string;
+  // Pipeline mode
+  stt_provider: string;
+  stt_model: string;
+  llm_provider: string;
+  llm_model: string;
+  tts_provider: string;
+  tts_model: string;
 }
 
 interface AgentDrawerProps {
@@ -64,37 +91,63 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
     name: "",
     description: "",
     instructions: "",
-    model: "gpt-4o",
     voice: "alloy",
     language: "en-US",
     first_message: "",
     temperature: 0.8,
+    // Voice AI Mode
+    mode: "realtime",
+    realtime_provider: "openai",
+    realtime_model: "gpt-4o-realtime-preview",
+    stt_provider: "deepgram",
+    stt_model: "nova-2",
+    llm_provider: "openai",
+    llm_model: "gpt-4o-mini",
+    tts_provider: "openai",
+    tts_model: "tts-1",
   });
 
   useEffect(() => {
     if (agent) {
       // Map API response to form data
+      const voice = agent.voice || {};
       setFormData({
         name: agent.name || "",
         description: agent.description || "",
         instructions: agent.instructions || "",
-        model: agent.model_name || "gpt-4o",
-        voice: agent.voice?.voice_id || "alloy",
+        voice: voice.voice_id || "alloy",
         language: agent.language || "en-US",
         first_message: agent.first_message || "",
         temperature: agent.temperature ?? 0.8,
+        mode: voice.mode || "realtime",
+        realtime_provider: voice.realtime_provider || "openai",
+        realtime_model: voice.realtime_model || "gpt-4o-realtime-preview",
+        stt_provider: voice.stt_provider || "deepgram",
+        stt_model: voice.stt_model || "nova-2",
+        llm_provider: voice.llm_provider || "openai",
+        llm_model: voice.llm_model || "gpt-4o-mini",
+        tts_provider: voice.tts_provider || "openai",
+        tts_model: voice.tts_model || "tts-1",
       });
     } else {
       // Reset to defaults
       setFormData({
         name: "",
         description: "",
-        instructions: "You are a helpful voice assistant.", // Default prompt
-        model: "gpt-4o",
+        instructions: "You are a helpful voice assistant.",
         voice: "alloy",
         language: "en-US",
         first_message: "Hello! How can I help you today?",
         temperature: 0.8,
+        mode: "realtime",
+        realtime_provider: "openai",
+        realtime_model: "gpt-4o-realtime-preview",
+        stt_provider: "deepgram",
+        stt_model: "nova-2",
+        llm_provider: "openai",
+        llm_model: "gpt-4o-mini",
+        tts_provider: "openai",
+        tts_model: "tts-1",
       });
     }
   }, [agent, open]);
@@ -114,9 +167,23 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
       name: formData.name,
       description: formData.description,
       instructions: formData.instructions,
-      model_name: formData.model,
-      // For now we assume verify voice provider is openai for simplicity or derive it
-      voice: { provider: "openai", voice_id: formData.voice },
+      // Full voice configuration with mode and providers
+      voice: {
+        provider: formData.mode === "realtime" ? formData.realtime_provider : formData.tts_provider,
+        voice_id: formData.voice,
+        mode: formData.mode,
+        // Realtime mode settings
+        realtime_provider: formData.realtime_provider,
+        realtime_model: formData.realtime_model,
+        // Pipeline mode settings
+        stt_provider: formData.stt_provider,
+        stt_model: formData.stt_model,
+        stt_language: formData.language.split("-")[0],
+        llm_provider: formData.llm_provider,
+        llm_model: formData.llm_model,
+        tts_provider: formData.tts_provider,
+        tts_model: formData.tts_model,
+      },
       first_message: formData.first_message,
       temperature: formData.temperature,
     };
@@ -140,10 +207,11 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
 
         <ScrollArea className="h-[calc(100vh-180px)] pr-4">
           <Tabs defaultValue="basics" className="mt-6">
-            <TabsList className="grid w-full grid-cols-3 bg-muted">
+            <TabsList className="grid w-full grid-cols-4 bg-muted">
               <TabsTrigger value="basics" className="data-[state=active]:bg-background">Basics</TabsTrigger>
-              <TabsTrigger value="conversation" className="data-[state=active]:bg-background">Conversation</TabsTrigger>
-              <TabsTrigger value="advanced" className="data-[state=active]:bg-background">Advanced</TabsTrigger>
+              <TabsTrigger value="conversation" className="data-[state=active]:bg-background">Voice</TabsTrigger>
+              <TabsTrigger value="models" className="data-[state=active]:bg-background">Models</TabsTrigger>
+              <TabsTrigger value="advanced" className="data-[state=active]:bg-background">Settings</TabsTrigger>
             </TabsList>
 
             {/* Basics Tab */}
@@ -213,8 +281,8 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
                       type="button"
                       onClick={() => setFormData({ ...formData, voice: voice.id })}
                       className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${formData.voice === voice.id
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-muted/50 hover:bg-accent"
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-muted/50 hover:bg-accent"
                         }`}
                     >
                       <div>
@@ -239,31 +307,181 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
               </div>
             </TabsContent>
 
+            {/* Models Tab */}
+            <TabsContent value="models" className="mt-6 space-y-6">
+              <div className="space-y-2">
+                <Label className="text-foreground">Voice AI Mode</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {modeOptions.map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, mode: mode.id })}
+                      className={`flex flex-col rounded-lg border p-3 text-left transition-colors ${formData.mode === mode.id
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-muted/50 hover:bg-accent"
+                        }`}
+                    >
+                      <p className="font-medium text-foreground">{mode.name}</p>
+                      <p className="text-xs text-muted-foreground">{mode.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {formData.mode === "realtime" ? (
+                // Realtime Mode Settings
+                <div className="space-y-4 rounded-lg border border-border p-4">
+                  <p className="text-sm font-medium text-foreground">Realtime Provider</p>
+                  <Select
+                    value={formData.realtime_provider}
+                    onValueChange={(value) => {
+                      const provider = realtimeProviderOptions.find(p => p.id === value);
+                      setFormData({
+                        ...formData,
+                        realtime_provider: value,
+                        realtime_model: provider?.models[0] || "gpt-4o-realtime-preview"
+                      });
+                    }}
+                  >
+                    <SelectTrigger className="bg-background border-border text-foreground">
+                      <SelectValue placeholder="Select provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {realtimeProviderOptions.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                // Pipeline Mode Settings
+                <div className="space-y-4">
+                  {/* STT Provider */}
+                  <div className="rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-sm font-medium text-foreground">🎙️ Speech-to-Text (STT)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        value={formData.stt_provider}
+                        onValueChange={(value) => {
+                          const provider = sttProviderOptions.find(p => p.id === value);
+                          setFormData({
+                            ...formData,
+                            stt_provider: value,
+                            stt_model: provider?.models[0] || "nova-2"
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="bg-background border-border text-foreground">
+                          <SelectValue placeholder="Provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sttProviderOptions.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={formData.stt_model}
+                        onValueChange={(value) => setFormData({ ...formData, stt_model: value })}
+                      >
+                        <SelectTrigger className="bg-background border-border text-foreground">
+                          <SelectValue placeholder="Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sttProviderOptions.find(p => p.id === formData.stt_provider)?.models.map((m) => (
+                            <SelectItem key={m} value={m}>{m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* LLM Provider */}
+                  <div className="rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-sm font-medium text-foreground">🧠 Large Language Model (LLM)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        value={formData.llm_provider}
+                        onValueChange={(value) => {
+                          const provider = llmProviderOptions.find(p => p.id === value);
+                          setFormData({
+                            ...formData,
+                            llm_provider: value,
+                            llm_model: provider?.models[0] || "gpt-4o-mini"
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="bg-background border-border text-foreground">
+                          <SelectValue placeholder="Provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {llmProviderOptions.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={formData.llm_model}
+                        onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
+                      >
+                        <SelectTrigger className="bg-background border-border text-foreground">
+                          <SelectValue placeholder="Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {llmProviderOptions.find(p => p.id === formData.llm_provider)?.models.map((m) => (
+                            <SelectItem key={m} value={m}>{m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* TTS Provider */}
+                  <div className="rounded-lg border border-border p-4 space-y-3">
+                    <p className="text-sm font-medium text-foreground">🔊 Text-to-Speech (TTS)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        value={formData.tts_provider}
+                        onValueChange={(value) => {
+                          const provider = ttsProviderOptions.find(p => p.id === value);
+                          setFormData({
+                            ...formData,
+                            tts_provider: value,
+                            tts_model: provider?.models[0] || "tts-1"
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="bg-background border-border text-foreground">
+                          <SelectValue placeholder="Provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ttsProviderOptions.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={formData.tts_model}
+                        onValueChange={(value) => setFormData({ ...formData, tts_model: value })}
+                      >
+                        <SelectTrigger className="bg-background border-border text-foreground">
+                          <SelectValue placeholder="Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ttsProviderOptions.find(p => p.id === formData.tts_provider)?.models.map((m) => (
+                            <SelectItem key={m} value={m}>{m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
             {/* Advanced Tab */}
             <TabsContent value="advanced" className="mt-6 space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="model" className="text-foreground">Model</Label>
-                <Select
-                  value={formData.model}
-                  onValueChange={(value) => setFormData({ ...formData, model: value })}
-                >
-                  <SelectTrigger className="bg-background border-border text-foreground">
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelOptions.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
-                        <div className="flex flex-col">
-                          <span>{model.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {model.description}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">

@@ -20,8 +20,15 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_REALTIME_VOICE = os.getenv("OPENAI_REALTIME_VOICE", "alloy")
     
-    # Google/Gemini (for post-call analysis)
+    # Google/Gemini (for post-call analysis and Gemini Live)
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    
+    # Additional Voice AI Providers (optional)
+    DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+    ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY")
+    ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
     
     # MongoDB
     MONGODB_URI = os.getenv("MONGODB_URI")
