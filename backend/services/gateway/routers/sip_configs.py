@@ -18,10 +18,13 @@ router = APIRouter()
 
 
 @router.post("/sip-configs")
-async def create_sip_config(request: CreateSipConfigRequest):
-    """Create a new SIP configuration."""
+async def create_sip_config(
+    request: CreateSipConfigRequest,
+    user: User = Depends(get_current_user)
+):
+    """Create a new SIP configuration for the current user's workspace."""
     try:
-        sip = await SipConfigService.create_sip_config(request)
+        sip = await SipConfigService.create_sip_config(request, user.workspace_id)
         return {
             "sip_id": sip.sip_id,
             "name": sip.name,
@@ -34,9 +37,15 @@ async def create_sip_config(request: CreateSipConfigRequest):
 
 
 @router.get("/sip-configs")
-async def list_sip_configs(is_active: Optional[bool] = Query(None)):
-    """List all SIP configurations."""
-    configs = await SipConfigService.list_sip_configs(is_active=is_active)
+async def list_sip_configs(
+    is_active: Optional[bool] = Query(None),
+    user: User = Depends(get_current_user)
+):
+    """List SIP configurations for the current user's workspace."""
+    configs = await SipConfigService.list_sip_configs(
+        workspace_id=user.workspace_id,
+        is_active=is_active
+    )
     return {
         "sip_configs": [c.to_dict() for c in configs],
         "count": len(configs),
@@ -44,18 +53,25 @@ async def list_sip_configs(is_active: Optional[bool] = Query(None)):
 
 
 @router.get("/sip-configs/{sip_id}")
-async def get_sip_config(sip_id: str):
-    """Get a specific SIP configuration."""
-    sip = await SipConfigService.get_sip_config(sip_id)
+async def get_sip_config(
+    sip_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Get a specific SIP configuration within the user's workspace."""
+    sip = await SipConfigService.get_sip_config(sip_id, user.workspace_id)
     if not sip:
         raise HTTPException(status_code=404, detail="SIP config not found")
     return sip.to_dict()
 
 
 @router.patch("/sip-configs/{sip_id}")
-async def update_sip_config(sip_id: str, request: UpdateSipConfigRequest):
-    """Update a SIP configuration."""
-    sip = await SipConfigService.update_sip_config(sip_id, request)
+async def update_sip_config(
+    sip_id: str,
+    request: UpdateSipConfigRequest,
+    user: User = Depends(get_current_user)
+):
+    """Update a SIP configuration within the user's workspace."""
+    sip = await SipConfigService.update_sip_config(sip_id, request, user.workspace_id)
     if not sip:
         raise HTTPException(status_code=404, detail="SIP config not found")
     return {
@@ -66,9 +82,12 @@ async def update_sip_config(sip_id: str, request: UpdateSipConfigRequest):
 
 
 @router.delete("/sip-configs/{sip_id}")
-async def delete_sip_config(sip_id: str):
-    """Delete a SIP configuration."""
-    deleted = await SipConfigService.delete_sip_config(sip_id)
+async def delete_sip_config(
+    sip_id: str,
+    user: User = Depends(get_current_user)
+):
+    """Delete a SIP configuration within the user's workspace."""
+    deleted = await SipConfigService.delete_sip_config(sip_id, user.workspace_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="SIP config not found")
     return {"message": "SIP config deleted successfully"}

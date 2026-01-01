@@ -18,6 +18,7 @@ router = APIRouter()
 
 
 @router.post("/phone-numbers")
+@router.post("/phone-numbers/outbound")
 async def add_phone_number(
     request: CreatePhoneNumberRequest,
     user: Optional[User] = Depends(get_current_user_optional)
@@ -41,7 +42,6 @@ async def add_phone_number(
     except Exception as e:
         logger.error(f"Failed to add phone number: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/phone-numbers/inbound")
 async def add_inbound_number(

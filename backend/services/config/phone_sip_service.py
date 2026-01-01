@@ -247,16 +247,19 @@ class SipConfigService:
     """Service for managing SIP configurations."""
     
     @staticmethod
-    async def create_sip_config(request: CreateSipConfigRequest) -> SipConfig:
+    async def create_sip_config(request: CreateSipConfigRequest, workspace_id: str = None) -> SipConfig:
         """Create a new SIP configuration and optionally create LiveKit trunk."""
         from livekit import api
         from shared.settings import config
         
         db = get_database()
         
-        # If this is set as default, unset other defaults
+        # If this is set as default, unset other defaults for this workspace
         if request.is_default:
-            await db.sip_configs.update_many({}, {"$set": {"is_default": False}})
+            query = {}
+            if workspace_id:
+                query["workspace_id"] = workspace_id
+            await db.sip_configs.update_many(query, {"$set": {"is_default": False}})
         
         trunk_id = request.trunk_id
         
@@ -291,6 +294,7 @@ class SipConfigService:
                 raise
         
         sip = SipConfig(
+            workspace_id=workspace_id,
             name=request.name,
             sip_domain=request.sip_domain,
             sip_username=request.sip_username,
@@ -302,51 +306,76 @@ class SipConfigService:
         )
         
         await db.sip_configs.insert_one(sip.to_dict())
-        logger.info(f"Created SIP config: {sip.sip_id} - {sip.name} (trunk: {trunk_id})")
+        logger.info(f"Created SIP config: {sip.sip_id} - {sip.name} (workspace: {workspace_id}, trunk: {trunk_id})")
         
-        # Invalidate SIP cache (global for now, could be workspace-scoped)
-        await SessionCache.delete_pattern("ws:*:sip")
+        # Invalidate SIP cache for workspace
+        if workspace_id:
+            await SessionCache.invalidate_sip(workspace_id)
+        else:
+            await SessionCache.delete_pattern("ws:*:sip")
         
         return sip
     
     @staticmethod
-    async def list_sip_configs(is_active: Optional[bool] = None) -> List[SipConfig]:
-        """List all SIP configurations."""
+    async def list_sip_configs(workspace_id: str = None, is_active: Optional[bool] = None) -> List[SipConfig]:
+        """List SIP configurations, scoped by workspace."""
+        # Check cache first
+        if workspace_id and is_active is None:
+            cached = await SessionCache.get_sip_configs(workspace_id)
+            if cached:
+                return [SipConfig.from_dict(c) for c in cached]
+        
         db = get_database()
         
         query = {}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
         if is_active is not None:
             query["is_active"] = is_active
         
         cursor = db.sip_configs.find(query).sort("created_at", -1)
         
         configs = []
+        docs = []
         async for doc in cursor:
+            if "_id" in doc:
+                del doc["_id"]
+            docs.append(doc)
             configs.append(SipConfig.from_dict(doc))
+        
+        # Cache the result
+        if workspace_id and is_active is None and docs:
+            await SessionCache.cache_sip_configs(workspace_id, docs)
         
         return configs
     
     @staticmethod
-    async def get_sip_config(sip_id: str) -> Optional[SipConfig]:
-        """Get a SIP config by ID."""
+    async def get_sip_config(sip_id: str, workspace_id: str = None) -> Optional[SipConfig]:
+        """Get a SIP config by ID, scoped by workspace."""
         db = get_database()
-        doc = await db.sip_configs.find_one({"sip_id": sip_id})
+        query = {"sip_id": sip_id}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        doc = await db.sip_configs.find_one(query)
         if doc:
             return SipConfig.from_dict(doc)
         return None
     
     @staticmethod
-    async def get_default_sip_config() -> Optional[SipConfig]:
-        """Get the default SIP configuration."""
+    async def get_default_sip_config(workspace_id: str = None) -> Optional[SipConfig]:
+        """Get the default SIP configuration, scoped by workspace."""
         db = get_database()
-        doc = await db.sip_configs.find_one({"is_default": True, "is_active": True})
+        query = {"is_default": True, "is_active": True}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        doc = await db.sip_configs.find_one(query)
         if doc:
             return SipConfig.from_dict(doc)
         return None
     
     @staticmethod
-    async def update_sip_config(sip_id: str, request: UpdateSipConfigRequest) -> Optional[SipConfig]:
-        """Update a SIP configuration."""
+    async def update_sip_config(sip_id: str, request: UpdateSipConfigRequest, workspace_id: str = None) -> Optional[SipConfig]:
+        """Update a SIP configuration, scoped by workspace."""
         db = get_database()
         
         updates = {}
@@ -356,33 +385,49 @@ class SipConfigService:
             if value is not None:
                 updates[key] = value
         
-        # If setting as default, unset other defaults
+        # If setting as default, unset other defaults for this workspace
         if updates.get("is_default"):
-            await db.sip_configs.update_many({}, {"$set": {"is_default": False}})
+            unset_query = {}
+            if workspace_id:
+                unset_query["workspace_id"] = workspace_id
+            await db.sip_configs.update_many(unset_query, {"$set": {"is_default": False}})
         
         if updates:
             updates["updated_at"] = datetime.now(timezone.utc).isoformat()
             
+            query = {"sip_id": sip_id}
+            if workspace_id:
+                query["workspace_id"] = workspace_id
+            
             result = await db.sip_configs.find_one_and_update(
-                {"sip_id": sip_id},
+                query,
                 {"$set": updates},
                 return_document=True,
             )
             
             if result:
-                # Invalidate SIP cache
-                await SessionCache.delete_pattern("ws:*:sip")
+                # Invalidate SIP cache for workspace
+                if workspace_id:
+                    await SessionCache.invalidate_sip(workspace_id)
+                else:
+                    await SessionCache.delete_pattern("ws:*:sip")
                 return SipConfig.from_dict(result)
         
         return None
     
     @staticmethod
-    async def delete_sip_config(sip_id: str) -> bool:
-        """Delete a SIP configuration."""
+    async def delete_sip_config(sip_id: str, workspace_id: str = None) -> bool:
+        """Delete a SIP configuration, scoped by workspace."""
         db = get_database()
-        result = await db.sip_configs.delete_one({"sip_id": sip_id})
+        query = {"sip_id": sip_id}
+        if workspace_id:
+            query["workspace_id"] = workspace_id
+        result = await db.sip_configs.delete_one(query)
         if result.deleted_count > 0:
-            # Invalidate SIP cache
-            await SessionCache.delete_pattern("ws:*:sip")
+            # Invalidate SIP cache for workspace
+            if workspace_id:
+                await SessionCache.invalidate_sip(workspace_id)
+            else:
+                await SessionCache.delete_pattern("ws:*:sip")
             return True
         return False
