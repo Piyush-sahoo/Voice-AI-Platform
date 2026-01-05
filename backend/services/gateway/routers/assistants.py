@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import uuid
 from pydantic import BaseModel
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, BackgroundTasks
 
 import sys
 from pathlib import Path
@@ -177,3 +177,17 @@ async def test_webhook(
     else:
         raise HTTPException(status_code=500, detail="Failed to send webhook")
 
+@router.post("/assistants/analysis/{call_id}")
+async def trigger_call_analysis(
+    call_id: str,
+    background_tasks: BackgroundTasks,
+    user: Optional[User] = Depends(get_current_user_optional)
+):
+    """Trigger post-call analysis manually or from agent."""
+    from services.analytics.analysis_service import AnalysisService
+    
+    # We allow this to be called by anyone (or the agent) for now
+    # In production, verify the agent's token or internal API key
+    
+    background_tasks.add_task(AnalysisService.analyze_call, call_id)
+    return {"message": "Analysis triggered in background"}

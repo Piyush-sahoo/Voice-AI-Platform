@@ -71,6 +71,16 @@ class CallRecord(BaseModel):
         """Create from MongoDB document."""
         if "_id" in data:
             del data["_id"]  # Remove MongoDB's _id field
+        
+        # Normalize transcript format (legacy records have {"messages": [...]})
+        if "transcript" in data:
+            transcript = data["transcript"]
+            if isinstance(transcript, dict):
+                # Legacy format: {"messages": [...]} -> extract list
+                data["transcript"] = transcript.get("messages", [])
+            elif transcript is None:
+                data["transcript"] = []
+        
         return cls(**data)
 
 

@@ -47,6 +47,9 @@ class Config:
     API_HOST = os.getenv("API_HOST", "0.0.0.0")
     API_PORT = int(os.getenv("API_PORT", "8000"))
     
+    # Internal Service Auth
+    INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "vobiz_internal_secret_key_123")
+    
     @classmethod
     def validate(cls):
         """Validate required configuration."""

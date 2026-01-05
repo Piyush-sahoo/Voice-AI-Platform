@@ -6,6 +6,7 @@ import logging
 import os
 import json
 import sys
+import httpx
 from datetime import datetime, timezone
 
 # Add project root to path for imports
@@ -347,27 +348,102 @@ async def entrypoint(ctx: agents.JobContext):
     def _on_metrics_collected(ev: MetricsCollectedEvent):
         metrics.log_metrics(ev.metrics)
         usage_collector.collect(ev.metrics)
+        
+
+
+    # --- Manual Transcript Handling ---
+    # Since RealtimeModel doesn't automatically populate session.history in this version
+    # and AgentSession attributes vary, we use a robust local buffer.
+    transcript_messages = []
+    
+    # 1. Capture Transcriptions from Room (Standard LiveKit STT)
+    # This works for any invalid transcription events published to the room
+    @ctx.room.on("transcription_received")
+    def _on_transcription_received(ev):
+        # ev is TranscriptionReceivedEvent
+        # It contains a list of segments.
+        for seg in ev.segments:
+            if not seg.final:
+                continue # Only capture final segments
+            
+            # Determine role based on participant
+            role = "user"
+            # If the participant is the agent itself, it's assistant
+            if ev.participant and ev.participant.identity == ctx.agent.identity:
+                role = "assistant"
+            elif ev.participant is None: # Sometimes null for system/agent
+                role = "assistant"
+                
+            transcript_messages.append({"role": role, "content": seg.text})
+            logger.info(f"Transcript ({role}): {seg.text}")
+
 
     # Shutdown callback
     async def on_shutdown():
         """Handle cleanup when call ends."""
         try:
-            # Get transcript data
-            transcript_data = session.history.to_dict()
-            logger.info(f"Call {call_id} ended. Transcript has {len(transcript_data.get('messages', []))} messages.")
+            # Get transcript data - try multiple sources
+            # Priority: 1) Local buffer (room events), 2) session.conversation_history, 3) session.chat_ctx
+            transcript_data = transcript_messages  # Start with our local buffer
+            
+            # If local buffer is empty, try to get from session
+            if not transcript_data:
+                # Try conversation_history (newer API)
+                try:
+                    if hasattr(session, 'conversation_history') and session.conversation_history:
+                        logger.info("Using session.conversation_history for transcript")
+                        for msg in session.conversation_history:
+                            role = getattr(msg, 'role', 'user')
+                            content = getattr(msg, 'content', str(msg))
+                            if isinstance(content, list):
+                                content = ' '.join([str(c) for c in content])
+                            transcript_data.append({"role": role, "content": content})
+                except Exception as e:
+                    logger.debug(f"conversation_history not available: {e}")
+            
+            # Fallback: try chat_ctx.messages
+            if not transcript_data:
+                try:
+                    if hasattr(session, 'chat_ctx') and hasattr(session.chat_ctx, 'messages'):
+                        logger.info("Using session.chat_ctx.messages for transcript")
+                        for msg in session.chat_ctx.messages:
+                            role = getattr(msg, 'role', 'user')
+                            content = getattr(msg, 'content', str(msg))
+                            if isinstance(content, list):
+                                content = ' '.join([str(c) for c in content])
+                            transcript_data.append({"role": role, "content": content})
+                except Exception as e:
+                    logger.debug(f"chat_ctx.messages not available: {e}")
+            
+            logger.info(f"Call {call_id} ended. Captured {len(transcript_data)} transcript segments.")
             
             # Update database with transcript (no local file storage for container scalability)
+            # CallRecord.transcript expects List[Dict], not {"messages": [...]}
             await update_call_in_db(call_id, {
                 "status": "completed",
                 "ended_at": datetime.now(timezone.utc),
-                "transcript": transcript_data,
+                "transcript": transcript_data,  # Direct list, not wrapped in dict
             })
             
             # Send webhook
             await send_webhook(call_id, "completed")
             
-            # Run post-call analysis (disabled - causes timeout on Gemini API)
-            # await run_post_call_analysis(call_id)
+            # Trigger post-call analysis via Analytics Service (direct call to dedicated service)
+            try:
+                # Call Analytics Service directly (not via Gateway) for proper microservice separation
+                API_URL = "http://analytics:8001"  # Analytics container
+                INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "vobiz_internal_secret_key_123")
+                
+                start_time = datetime.now()
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        f"{API_URL}/calls/{call_id}/analyze",  # Analytics Service endpoint
+                        timeout=2.0,
+                        headers={"X-API-Key": INTERNAL_KEY}
+                    )
+                logger.info(f"Triggered analysis for {call_id} (took {(datetime.now() - start_time).total_seconds()}s)")
+            except Exception as exc:
+                logger.warning(f"Failed to trigger analysis: {exc}")
             
             # Log usage
             summary = usage_collector.get_summary()

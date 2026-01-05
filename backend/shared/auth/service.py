@@ -272,6 +272,22 @@ class AuthService:
         """
         db = get_database()
         
+        # Check for Internal System Key
+        from shared.settings import config
+        if api_key == config.INTERNAL_API_KEY:
+            # Return a "System User"
+            system_user = User(
+                user_id="system",
+                workspace_id="system", # Or handle as global admin
+                email="system@vobiz.ai",
+                name="System Service",
+                role="owner",
+                password_hash=""
+            )
+            # If we need a specific workspace, we might need to pass it or handle it
+            # For analysis, we usually operate on the call's workspace
+            return system_user, "system"
+        
         # Hash the key
         key_hash = AuthService._hash_api_key(api_key)
         

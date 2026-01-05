@@ -3,7 +3,7 @@ import logging
 from typing import Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from pydantic import BaseModel, Field
 import uuid
 
@@ -50,7 +50,10 @@ class UpdateAssistantRequest(BaseModel):
 # ============== Endpoints ==============
 
 @router.post("")
-async def create_assistant(request: CreateAssistantRequest):
+async def create_assistant(
+    request: CreateAssistantRequest,
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
+):
     """Create a new AI assistant and cache it."""
     db = get_database()
     
@@ -64,6 +67,7 @@ async def create_assistant(request: CreateAssistantRequest):
         "temperature": request.temperature,
         "webhook_url": request.webhook_url,
         "is_active": True,
+        "workspace_id": x_workspace_id,  # Multi-tenancy
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -73,7 +77,7 @@ async def create_assistant(request: CreateAssistantRequest):
     # Cache immediately
     await RedisCache.cache_assistant(assistant["assistant_id"], assistant)
     
-    logger.info(f"Created assistant: {assistant['assistant_id']}")
+    logger.info(f"Created assistant: {assistant['assistant_id']} (workspace: {x_workspace_id})")
     return {"assistant_id": assistant["assistant_id"], "name": assistant["name"], "message": "Created"}
 
 
@@ -82,13 +86,22 @@ async def list_assistants(
     is_active: Optional[bool] = Query(None),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
 ):
-    """List all assistants."""
+    """List all assistants for workspace."""
     db = get_database()
     
     query = {}
     if is_active is not None:
         query["is_active"] = is_active
+    
+    # Multi-tenancy filtering
+    if x_workspace_id:
+        query["$or"] = [
+            {"workspace_id": x_workspace_id},
+            {"workspace_id": None},  # Legacy data
+            {"workspace_id": {"$exists": False}},
+        ]
     
     cursor = db.assistants.find(query).sort("created_at", -1).skip(skip).limit(limit)
     

@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 import uuid
 
@@ -41,13 +41,19 @@ class UpdateSipConfigRequest(BaseModel):
 
 
 @router.post("")
-async def create_sip_config(request: CreateSipConfigRequest):
+async def create_sip_config(
+    request: CreateSipConfigRequest,
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
+):
     """Create SIP config and cache it."""
     db = get_database()
     
-    # If setting as default, unset others
+    # If setting as default, unset others in same workspace
     if request.is_default:
-        await db.sip_configs.update_many({}, {"$set": {"is_default": False}})
+        query = {"is_default": True}
+        if x_workspace_id:
+            query["workspace_id"] = x_workspace_id
+        await db.sip_configs.update_many(query, {"$set": {"is_default": False}})
     
     sip = {
         "sip_id": f"sip_{uuid.uuid4().hex[:12]}",
@@ -60,24 +66,36 @@ async def create_sip_config(request: CreateSipConfigRequest):
         "description": request.description,
         "is_default": request.is_default,
         "is_active": True,
+        "workspace_id": x_workspace_id,  # Multi-tenancy
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     
     await db.sip_configs.insert_one(sip)
     await RedisCache.cache_sip(sip["sip_id"], sip)
     
-    logger.info(f"Created SIP config: {sip['sip_id']}")
+    logger.info(f"Created SIP config: {sip['sip_id']} (workspace: {x_workspace_id})")
     return {"sip_id": sip["sip_id"], "name": sip["name"], "message": "Created"}
 
 
 @router.get("")
-async def list_sip_configs(is_active: Optional[bool] = Query(None)):
-    """List all SIP configs."""
+async def list_sip_configs(
+    is_active: Optional[bool] = Query(None),
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
+):
+    """List all SIP configs for workspace."""
     db = get_database()
     
     query = {}
     if is_active is not None:
         query["is_active"] = is_active
+    
+    # Multi-tenancy filtering
+    if x_workspace_id:
+        query["$or"] = [
+            {"workspace_id": x_workspace_id},
+            {"workspace_id": None},  # Legacy data
+            {"workspace_id": {"$exists": False}},
+        ]
     
     cursor = db.sip_configs.find(query).sort("created_at", -1)
     

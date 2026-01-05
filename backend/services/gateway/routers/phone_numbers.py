@@ -68,7 +68,8 @@ async def add_inbound_number(
             "assistant_id": phone.assistant_id,
             "inbound_trunk_id": phone.inbound_trunk_id,
             "dispatch_rule_id": phone.dispatch_rule_id,
-            "message": "Inbound number configured successfully. Update your Vobiz trunk Primary URI to route calls.",
+            "sip_uri": phone.sip_uri,  # LiveKit SIP endpoint for Vobiz Primary URI
+            "message": "Inbound number configured successfully. Set Vobiz Primary URI to the sip_uri value.",
         }
     except Exception as e:
         logger.error(f"Failed to create inbound number: {e}")

@@ -87,7 +87,7 @@ Respond ONLY with the JSON, no other text."""
             logger.info(f"Analyzing call {call_id} with Gemini...")
             
             # Generate analysis
-            response = model.generate_content(prompt)
+            response = await model.generate_content_async(prompt)
             
             # Parse response
             analysis_data = AnalysisService._parse_response(response.text)

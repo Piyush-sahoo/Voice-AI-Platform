@@ -77,9 +77,16 @@ class CallRecord(BaseModel):
             del data["_id"]
         
         # Handle transcript format variations
+        # Handle transcript format variations
         transcript = data.get("transcript")
-        if isinstance(transcript, dict) and "items" in transcript:
-            data["transcript"] = transcript.get("items", [])
+        # Legacy format: {"messages": [...]}
+        if isinstance(transcript, dict):
+            if "messages" in transcript:
+                data["transcript"] = transcript.get("messages", [])
+            elif "items" in transcript: # Handle items too if it exists
+                data["transcript"] = transcript.get("items", [])
+        elif transcript is None:
+             data["transcript"] = []
         
         return cls(**data)
 
@@ -95,10 +102,15 @@ class CreateCallRequest(BaseModel):
     metadata: Dict[str, Any] = {}
 
 
-class CallResponse(BaseModel):
-    """Response for call creation."""
-    call_id: str
-    status: str
-    room_name: str
-    message: str = "Call initiated successfully"
+class CallResponse(CallRecord):
+    """Response for call operations."""
+    message: Optional[str] = None
+    
+    @classmethod
+    def from_call_record(cls, record: CallRecord, message: str = None) -> "CallResponse":
+        """Create response from call record."""
+        data = record.model_dump()
+        if message:
+            data["message"] = message
+        return cls(**data)
 
