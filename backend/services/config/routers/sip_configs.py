@@ -46,35 +46,14 @@ async def create_sip_config(
     x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
 ):
     """Create SIP config and cache it."""
-    db = get_database()
+    from config.phone_sip_service import SipConfigService
     
-    # If setting as default, unset others in same workspace
-    if request.is_default:
-        query = {"is_default": True}
-        if x_workspace_id:
-            query["workspace_id"] = x_workspace_id
-        await db.sip_configs.update_many(query, {"$set": {"is_default": False}})
-    
-    sip = {
-        "sip_id": f"sip_{uuid.uuid4().hex[:12]}",
-        "name": request.name,
-        "sip_domain": request.sip_domain,
-        "sip_username": request.sip_username,
-        "sip_password": request.sip_password,
-        "from_number": request.from_number,
-        "trunk_id": request.trunk_id,
-        "description": request.description,
-        "is_default": request.is_default,
-        "is_active": True,
-        "workspace_id": x_workspace_id,  # Multi-tenancy
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    
-    await db.sip_configs.insert_one(sip)
-    await RedisCache.cache_sip(sip["sip_id"], sip)
-    
-    logger.info(f"Created SIP config: {sip['sip_id']} (workspace: {x_workspace_id})")
-    return {"sip_id": sip["sip_id"], "name": sip["name"], "message": "Created"}
+    try:
+        sip = await SipConfigService.create_sip_config(request, x_workspace_id)
+        return {"sip_id": sip.sip_id, "name": sip.name, "message": "Created"}
+    except Exception as e:
+        logger.error(f"Error creating SIP config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("")
@@ -169,12 +148,13 @@ async def update_sip_config(sip_id: str, request: UpdateSipConfigRequest):
 @router.delete("/{sip_id}")
 async def delete_sip_config(sip_id: str):
     """Delete SIP config and remove from cache."""
-    db = get_database()
+    from config.phone_sip_service import SipConfigService
     
-    result = await db.sip_configs.delete_one({"sip_id": sip_id})
-    
-    if result.deleted_count > 0:
-        await RedisCache.delete(RedisCache.sip_key(sip_id))
-        return {"message": "Deleted"}
-    
-    raise HTTPException(status_code=404, detail="SIP config not found")
+    try:
+        success = await SipConfigService.delete_sip_config(sip_id)
+        if success:
+            return {"message": "Deleted"}
+        raise HTTPException(status_code=404, detail="SIP config not found")
+    except Exception as e:
+        logger.error(f"Error deleting SIP config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
