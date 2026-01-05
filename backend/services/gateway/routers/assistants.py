@@ -1,6 +1,9 @@
 """Assistants API endpoints with multi-tenancy support."""
 import logging
 from typing import Optional
+from datetime import datetime, timezone
+import uuid
+from pydantic import BaseModel
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 
@@ -13,7 +16,9 @@ from shared.database.models import (
     UpdateAssistantRequest,
     AssistantResponse,
 )
-from services import AssistantService
+from services.config.assistant_service import AssistantService
+from services.analytics.webhook_service import WebhookService
+from shared.database.models import CallRecord, CallStatus, CallAnalysis
 from shared.auth.dependencies import get_current_user_optional
 from shared.auth.models import User
 
@@ -120,3 +125,55 @@ async def delete_assistant(
         raise HTTPException(status_code=404, detail="Assistant not found")
     
     return {"message": "Assistant deleted successfully"}
+
+
+class TestWebhookRequest(BaseModel):
+    webhook_url: Optional[str] = None
+
+
+@router.post("/assistants/{assistant_id}/test-webhook")
+async def test_webhook(
+    assistant_id: str,
+    request: TestWebhookRequest,
+    user: Optional[User] = Depends(get_current_user_optional)
+):
+    """Test webhook for an assistant."""
+    workspace_id = user.workspace_id if user else None
+    
+    # Get assistant to ensure access
+    assistant = await AssistantService.get_assistant(assistant_id, workspace_id=workspace_id)
+    if not assistant:
+        raise HTTPException(status_code=404, detail="Assistant not found")
+        
+    url = request.webhook_url or assistant.webhook_url
+    if not url:
+        raise HTTPException(status_code=400, detail="No webhook URL provided")
+        
+    # Create dummy call record for testing
+    dummy_call = CallRecord(
+        call_id=f"test_webhook_{uuid.uuid4().hex[:8]}",
+        workspace_id=workspace_id,
+        phone_number="+1234567890",
+        from_number="+1987654321",
+        room_name="test-room",
+        status=CallStatus.COMPLETED,
+        assistant_id=assistant_id,
+        webhook_url=url,
+        created_at=datetime.now(timezone.utc),
+        duration_seconds=42,
+        analysis=CallAnalysis(
+            success=True,
+            sentiment="positive",
+            summary="This is a test call summary from the Vobiz dashboard.",
+            key_topics=["Product Demo", "Pricing"],
+            action_items=["Send pricing PDF"],
+        )
+    )
+    
+    success = await WebhookService.send_completed(dummy_call)
+    
+    if success:
+        return {"message": "Webhook sent successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to send webhook")
+

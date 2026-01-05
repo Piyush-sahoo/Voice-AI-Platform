@@ -122,7 +122,7 @@ async def update_call_in_db(call_id: str, updates: dict):
 async def run_post_call_analysis(call_id: str):
     """Run post-call analysis using Gemini."""
     try:
-        from services.analysis_service import AnalysisService
+        from services.analytics.analysis_service import AnalysisService
         from shared.database.connection import connect_to_database
         
         if config.MONGODB_URI:
@@ -138,7 +138,7 @@ async def send_webhook(call_id: str, event: str):
     """Send webhook notification."""
     try:
         from motor.motor_asyncio import AsyncIOMotorClient
-        from services.webhook_service import WebhookService
+        from services.analytics.webhook_service import WebhookService
         from shared.database.models import CallRecord
         
         if not config.MONGODB_URI:
@@ -186,12 +186,18 @@ async def get_inbound_assistant_config(room_name: str) -> dict:
         # The dispatch rule creates rooms with prefix "call-" or "inbound-"
         # We need to find which phone number this call came in on
         
+        # Debug: Log all inbound numbers
+        all_inbound = await db.phone_numbers.find({"direction": "inbound"}).to_list(10)
+        logger.info(f"[INBOUND] All inbound numbers in DB: {len(all_inbound)}")
+        for num in all_inbound:
+            logger.info(f"[INBOUND]   -> {num.get('number')} | assistant_id={num.get('assistant_id')} | is_active={num.get('is_active')}")
+        
         # For now, get the first active inbound number's assistant
         # (In production, you'd extract the called number from SIP headers)
         phone_doc = await db.phone_numbers.find_one({
             "direction": "inbound",
             "is_active": True,
-            "assistant_id": {"$exists": True, "$ne": None}
+            "assistant_id": {"$exists": True, "$ne": None, "$ne": ""}
         })
         
         if not phone_doc:
@@ -297,13 +303,20 @@ async def entrypoint(ctx: agents.JobContext):
         call_id = ctx.room.name
     
     # Detect inbound vs outbound call
-    # Inbound: room name starts with "inbound-" or "call-" (set by dispatch rule)
-    is_inbound = ctx.room.name.startswith("inbound-") or ctx.room.name.startswith("call-") or (not phone_number and not ctx.job.metadata)
+    # Inbound: room name starts with "inbound-"
+    # Outbound: has phone_number in metadata
+    if ctx.room.name.startswith("inbound-"):
+        is_inbound = True
+    elif phone_number:
+        is_inbound = False
+    else:
+        # Fallback for other room names (e.g. "call-") without phone number -> Inbound
+        is_inbound = True
     
     if is_inbound:
         logger.info(f"[INBOUND CALL] Room: {ctx.room.name}")
     else:
-        logger.info(f"[OUTBOUND CALL] To: {phone_number}")
+        logger.info(f"[OUTBOUND CALL] To: {phone_number} (Room: {ctx.room.name})")
 
     # Create session based on mode
     mode = voice_config.get("mode", "realtime")
@@ -353,8 +366,8 @@ async def entrypoint(ctx: agents.JobContext):
             # Send webhook
             await send_webhook(call_id, "completed")
             
-            # Run post-call analysis
-            await run_post_call_analysis(call_id)
+            # Run post-call analysis (disabled - causes timeout on Gemini API)
+            # await run_post_call_analysis(call_id)
             
             # Log usage
             summary = usage_collector.get_summary()
@@ -371,6 +384,7 @@ async def entrypoint(ctx: agents.JobContext):
         agent=OutboundAssistant(custom_instructions),
         room_input_options=RoomInputOptions(
             noise_cancellation=noise_cancellation.BVCTelephony(),
+            close_on_disconnect=False,  # Keep session alive for proper cleanup
         ),
     )
 
@@ -426,7 +440,7 @@ async def entrypoint(ctx: agents.JobContext):
                     sip_trunk_id=sip_trunk_id,
                     sip_call_to=phone_number,
                     participant_identity=f"sip_{phone_number}",
-                    wait_until_answered=True,
+                    wait_until_answered=False,  # Don't block - let the call connect async
                 )
             )
             logger.info("Call answered! Agent is now listening.")

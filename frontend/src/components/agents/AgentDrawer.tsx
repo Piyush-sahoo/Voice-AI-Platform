@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { assistantsApi } from "@/lib/api";
 import {
   Sheet,
   SheetContent,
@@ -22,7 +23,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { voiceOptions, languageOptions, modeOptions, sttProviderOptions, llmProviderOptions, ttsProviderOptions, realtimeProviderOptions } from "@/data/mockAgents";
-import { Volume2, Loader2 } from "lucide-react";
+import { Volume2, Loader2, Webhook, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 
 // Extended voice configuration for backend
@@ -54,6 +55,7 @@ interface Agent {
   temperature?: number;
   first_message?: string;
   is_active?: boolean;
+  webhook_url?: string;
 }
 
 // UI State Interface (flattened for easier handling)
@@ -65,6 +67,7 @@ interface AgentFormData {
   language: string;
   first_message: string;
   temperature: number;
+  webhook_url: string;
   // Voice AI Mode
   mode: string;
   // Realtime mode
@@ -95,6 +98,7 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
     language: "en-US",
     first_message: "",
     temperature: 0.8,
+    webhook_url: "",
     // Voice AI Mode
     mode: "realtime",
     realtime_provider: "openai",
@@ -107,48 +111,53 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
     tts_model: "tts-1",
   });
 
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
+
   useEffect(() => {
-    if (agent) {
-      // Map API response to form data
-      const voice = agent.voice || {};
-      setFormData({
-        name: agent.name || "",
-        description: agent.description || "",
-        instructions: agent.instructions || "",
-        voice: voice.voice_id || "alloy",
-        language: agent.language || "en-US",
-        first_message: agent.first_message || "",
-        temperature: agent.temperature ?? 0.8,
-        mode: voice.mode || "realtime",
-        realtime_provider: voice.realtime_provider || "openai",
-        realtime_model: voice.realtime_model || "gpt-4o-realtime-preview",
-        stt_provider: voice.stt_provider || "deepgram",
-        stt_model: voice.stt_model || "nova-2",
-        llm_provider: voice.llm_provider || "openai",
-        llm_model: voice.llm_model || "gpt-4o-mini",
-        tts_provider: voice.tts_provider || "openai",
-        tts_model: voice.tts_model || "tts-1",
-      });
-    } else {
-      // Reset to defaults
-      setFormData({
-        name: "",
-        description: "",
-        instructions: "You are a helpful voice assistant.",
-        voice: "alloy",
-        language: "en-US",
-        first_message: "Hello! How can I help you today?",
-        temperature: 0.8,
-        mode: "realtime",
-        realtime_provider: "openai",
-        realtime_model: "gpt-4o-realtime-preview",
-        stt_provider: "deepgram",
-        stt_model: "nova-2",
-        llm_provider: "openai",
-        llm_model: "gpt-4o-mini",
-        tts_provider: "openai",
-        tts_model: "tts-1",
-      });
+    if (open) {
+      if (agent) {
+        // Map API response to form data
+        const voice = agent.voice || {};
+        setFormData({
+          name: agent.name || "",
+          description: agent.description || "",
+          instructions: agent.instructions || "",
+          voice: typeof agent.voice === 'string' ? agent.voice : (voice.voice_id || "alloy"),
+          language: agent.language || "en-US",
+          first_message: agent.first_message || "",
+          temperature: agent.temperature ?? 0.8,
+          webhook_url: agent.webhook_url || "",
+          mode: voice.mode || "realtime",
+          realtime_provider: voice.realtime_provider || "openai",
+          realtime_model: voice.realtime_model || "gpt-4o-realtime-preview",
+          stt_provider: voice.stt_provider || "deepgram",
+          stt_model: voice.stt_model || "nova-2",
+          llm_provider: voice.llm_provider || "openai",
+          llm_model: voice.llm_model || "gpt-4o-mini",
+          tts_provider: voice.tts_provider || "openai",
+          tts_model: voice.tts_model || "tts-1",
+        });
+      } else {
+        // Reset to defaults
+        setFormData({
+          name: "",
+          description: "",
+          instructions: "You are a helpful voice assistant.",
+          voice: "alloy",
+          language: "en-US",
+          first_message: "Hello! How can I help you today?",
+          temperature: 0.8,
+          mode: "realtime",
+          realtime_provider: "openai",
+          realtime_model: "gpt-4o-realtime-preview",
+          stt_provider: "deepgram",
+          stt_model: "nova-2",
+          llm_provider: "openai",
+          llm_model: "gpt-4o-mini",
+          tts_provider: "openai",
+          tts_model: "tts-1",
+        });
+      }
     }
   }, [agent, open]);
 
@@ -186,6 +195,7 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
       },
       first_message: formData.first_message,
       temperature: formData.temperature,
+      webhook_url: formData.webhook_url || undefined,
     };
 
     onSave(payload);
@@ -195,8 +205,31 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
     toast.info("Voice preview is a mock feature");
   };
 
+  const handleTestWebhook = async () => {
+    if (!formData.webhook_url) {
+      toast.error("Please enter a webhook URL first");
+      return;
+    }
+
+    if (!agent?.assistant_id) {
+      toast.error("Please save the agent first required to test webhook");
+      return;
+    }
+
+    try {
+      setIsTestingWebhook(true);
+      await assistantsApi.testWebhook(agent.assistant_id, formData.webhook_url);
+      toast.success("Test webhook sent successfully!");
+    } catch (error) {
+      toast.error("Failed to send test webhook");
+      console.error(error);
+    } finally {
+      setIsTestingWebhook(false);
+    }
+  };
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange} >
       <SheetContent className="w-full sm:max-w-xl">
         <SheetHeader>
           <SheetTitle className="text-foreground">{agent ? "Edit Agent" : "Create Agent"}</SheetTitle>
@@ -517,6 +550,40 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Webhook Configuration */}
+              <div className="space-y-2 pt-4 border-t border-border">
+                <Label htmlFor="webhook" className="text-foreground">Webhook URL</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Webhook className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="webhook"
+                      value={formData.webhook_url}
+                      onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
+                      placeholder="https://your-api.com/webhooks/voice-agent"
+                      className="pl-10 bg-background border-border text-foreground"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleTestWebhook}
+                    disabled={!formData.webhook_url || isTestingWebhook}
+                    title="Send Test Webhook"
+                  >
+                    {isTestingWebhook ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FlaskConical className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Receive POST requests when calls are answered or completed.
+                </p>
+              </div>
+
             </TabsContent>
           </Tabs>
         </ScrollArea>
@@ -530,6 +597,6 @@ export function AgentDrawer({ open, onOpenChange, agent, onSave }: AgentDrawerPr
           </Button>
         </div>
       </SheetContent>
-    </Sheet>
+    </Sheet >
   );
 }

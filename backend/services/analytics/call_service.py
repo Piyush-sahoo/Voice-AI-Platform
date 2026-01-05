@@ -149,8 +149,15 @@ class CallService:
             
             metadata = json.dumps(metadata_dict)
             
+            # Create the room explicitly to ensure the agent can join
+            try:
+                await lk_api.room.create_room(api.CreateRoomRequest(name=call.room_name))
+                logger.info(f"Created room: {call.room_name}")
+            except Exception as e:
+                logger.warning(f"Room {call.room_name} might already exist or failed execution: {e}")
+
             dispatch_request = api.CreateAgentDispatchRequest(
-                agent_name="outbound-caller",
+                agent_name="voice-assistant",
                 room=call.room_name,
                 metadata=metadata,
             )

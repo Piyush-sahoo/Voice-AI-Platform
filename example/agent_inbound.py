@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 from livekit import agents
 from livekit.agents import AgentSession, Agent, RoomInputOptions
-from livekit.plugins import openai, deepgram, silero
+from livekit.plugins import openai, silero
 
 load_dotenv(".env.local")
 
@@ -47,20 +47,16 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"[OK] Starting voice assistant for room: {ctx.room.name}")
 
     # Get configuration from environment
-    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
     openai_api_key = os.getenv("OPENAI_API_KEY")
 
-    if not deepgram_api_key:
-        raise ValueError("DEEPGRAM_API_KEY not found in .env.local")
     if not openai_api_key:
         raise ValueError("OPENAI_API_KEY not found in .env.local")
 
-    # Configure the agent session
+    # Configure the agent session using OpenAI for everything
     session = AgentSession(
-        # Speech-to-Text: Deepgram Nova-3 (multilingual support)
-        stt=deepgram.STT(
-            model="nova-3",
-            language="multi"  # Supports multiple languages
+        # Speech-to-Text: OpenAI Whisper
+        stt=openai.STT(
+            model="whisper-1",
         ),
 
         # Large Language Model: OpenAI GPT-4o-mini

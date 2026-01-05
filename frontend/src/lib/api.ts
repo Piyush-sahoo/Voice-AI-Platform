@@ -87,6 +87,7 @@ export const assistantsApi = {
     create: (data: unknown) => api.post<unknown>("/api/assistants", data),
     update: (id: string, data: unknown) => api.patch<unknown>(`/api/assistants/${id}`, data),
     delete: (id: string) => api.delete<unknown>(`/api/assistants/${id}`),
+    testWebhook: (id: string, webhook_url: string) => api.post<unknown>(`/api/assistants/${id}/test-webhook`, { webhook_url }),
 };
 
 export const campaignsApi = {
