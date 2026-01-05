@@ -22,6 +22,7 @@ class PhoneNumber(BaseModel):
     assistant_id: Optional[str] = None  # Agent that answers inbound calls
     inbound_trunk_id: Optional[str] = None  # LiveKit inbound trunk ID
     dispatch_rule_id: Optional[str] = None  # LiveKit dispatch rule ID
+    sip_uri: Optional[str] = None  # LiveKit SIP endpoint (e.g., "48bltwoad8r.sip.livekit.cloud")
     allowed_addresses: list = Field(default_factory=lambda: ["0.0.0.0/0"])  # IP whitelist
     krisp_enabled: bool = True  # Noise cancellation
     

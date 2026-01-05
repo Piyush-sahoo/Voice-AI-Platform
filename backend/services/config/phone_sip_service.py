@@ -123,6 +123,37 @@ class PhoneNumberService:
         )
         
         try:
+            # 0. Clean up existing trunks/dispatch rules for this number
+            logger.info(f"Checking for existing configuration for {request.number}...")
+            
+            # Delete dispatch rules first (they reference trunks)
+            try:
+                rules = await lk_api.sip.list_sip_dispatch_rule(api.ListSIPDispatchRuleRequest())
+                for rule in rules.items:
+                    # Check if rule is linked to trunks with our number
+                    if request.number in str(rule):
+                        logger.info(f"Deleting existing dispatch rule: {rule.sip_dispatch_rule_id}")
+                        await lk_api.sip.delete_sip_dispatch_rule(
+                            api.DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=rule.sip_dispatch_rule_id)
+                        )
+            except Exception as e:
+                logger.debug(f"Error cleaning dispatch rules: {e}")
+            
+            # Delete inbound trunks with matching number
+            try:
+                trunks = await lk_api.sip.list_sip_inbound_trunk(api.ListSIPInboundTrunkRequest())
+                for trunk in trunks.items:
+                    if request.number in trunk.numbers:
+                        logger.info(f"Deleting existing inbound trunk: {trunk.sip_trunk_id}")
+                        await lk_api.sip.delete_sip_trunk(
+                            api.DeleteSIPTrunkRequest(sip_trunk_id=trunk.sip_trunk_id)
+                        )
+            except Exception as e:
+                logger.debug(f"Error cleaning trunks: {e}")
+            
+            # Also clean up from our database
+            await db.phone_numbers.delete_many({"number": request.number, "direction": "inbound"})
+            
             # 1. Create Inbound Trunk
             logger.info(f"Creating inbound trunk for {request.number}")
             trunk = await lk_api.sip.create_sip_inbound_trunk(
@@ -162,7 +193,13 @@ class PhoneNumberService:
             dispatch_rule_id = result.sip_dispatch_rule_id
             logger.info(f"Created dispatch rule: {dispatch_rule_id}")
             
-            # 3. Save to database
+            # 3. Calculate the LiveKit SIP URI (for user to configure in Vobiz)
+            livekit_url = config.LIVEKIT_URL or ""
+            project_id = livekit_url.replace("wss://", "").replace("ws://", "").split(".")[0]
+            sip_uri = f"{project_id}.sip.livekit.cloud" if project_id else None
+            logger.info(f"LiveKit SIP URI: {sip_uri}")
+            
+            # 4. Save to database
             phone = PhoneNumber(
                 workspace_id=workspace_id,
                 number=request.number,
@@ -172,6 +209,7 @@ class PhoneNumberService:
                 assistant_id=request.assistant_id,
                 inbound_trunk_id=trunk_id,
                 dispatch_rule_id=dispatch_rule_id,
+                sip_uri=sip_uri,  # LiveKit SIP endpoint for Vobiz config
                 allowed_addresses=request.allowed_addresses,
                 krisp_enabled=request.krisp_enabled,
             )

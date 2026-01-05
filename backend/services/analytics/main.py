@@ -91,7 +91,13 @@ async def list_calls(
         limit=limit,
         skip=skip
     )
-    return [CallResponse.from_call_record(c) for c in calls]
+    
+    return {
+        "calls": [CallResponse.from_call_record(c) for c in calls],
+        "count": len(calls),
+        "limit": limit,
+        "skip": skip
+    }
 
 
 @app.get("/calls/{call_id}")
