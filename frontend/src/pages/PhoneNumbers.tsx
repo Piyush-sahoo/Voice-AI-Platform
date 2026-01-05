@@ -143,10 +143,11 @@ export default function PhoneNumbers() {
   }) => {
     try {
       await sipConfigsApi.create({
-        phone_number: config.phoneNumber,
-        username: config.username,
-        password: config.password,
-        label: config.name,
+        from_number: config.phoneNumber,
+        sip_username: config.username,
+        sip_password: config.password,
+        name: config.name,
+        sip_domain: config.sipTerminalUri,
       });
       toast.success("SIP configuration added successfully");
       fetchData();

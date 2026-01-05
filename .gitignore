@@ -23,3 +23,9 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Development & Testing
+example/
+temp_reference/
+backend/venv/
+backend/.venv/
