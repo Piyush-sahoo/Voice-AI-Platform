@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 import uuid
 
@@ -25,7 +25,10 @@ class CreatePhoneNumberRequest(BaseModel):
 
 
 @router.post("")
-async def add_phone_number(request: CreatePhoneNumberRequest):
+async def add_phone_number(
+    request: CreatePhoneNumberRequest,
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
+):
     """Add a new phone number and cache it."""
     if not request.number.startswith("+"):
         raise HTTPException(status_code=400, detail="Phone must be E.164 format")
@@ -38,24 +41,36 @@ async def add_phone_number(request: CreatePhoneNumberRequest):
         "label": request.label,
         "provider": request.provider,
         "is_active": True,
+        "workspace_id": x_workspace_id,  # Multi-tenancy
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     
     await db.phone_numbers.insert_one(phone)
     await RedisCache.cache_phone(phone["phone_id"], phone)
     
-    logger.info(f"Added phone: {phone['phone_id']}")
+    logger.info(f"Added phone: {phone['phone_id']} (workspace: {x_workspace_id})")
     return {"phone_id": phone["phone_id"], "number": phone["number"], "message": "Added"}
 
 
 @router.get("")
-async def list_phone_numbers(is_active: Optional[bool] = Query(None)):
-    """List all phone numbers."""
+async def list_phone_numbers(
+    is_active: Optional[bool] = Query(None),
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
+):
+    """List all phone numbers for workspace."""
     db = get_database()
     
     query = {}
     if is_active is not None:
         query["is_active"] = is_active
+    
+    # Multi-tenancy filtering
+    if x_workspace_id:
+        query["$or"] = [
+            {"workspace_id": x_workspace_id},
+            {"workspace_id": None},
+            {"workspace_id": {"$exists": False}},
+        ]
     
     cursor = db.phone_numbers.find(query).sort("created_at", -1)
     

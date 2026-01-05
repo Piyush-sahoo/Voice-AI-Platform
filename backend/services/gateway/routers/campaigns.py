@@ -114,17 +114,23 @@ async def get_campaign_stats(campaign_id: str):
 
 @router.post("/campaigns/{campaign_id}/start")
 async def start_campaign(campaign_id: str):
-    """Start a campaign."""
+    """Start a campaign - queues execution via Celery worker."""
+    from services.orchestration.tasks_queue.tasks import execute_campaign
+    
     campaign = await CampaignService.start_campaign(campaign_id)
     if not campaign:
         raise HTTPException(status_code=400, detail="Campaign not found or cannot be started")
+    
+    # Queue campaign execution via Celery (delegates to Orchestration container)
+    task = execute_campaign.delay(campaign_id)
+    logger.info(f"Campaign {campaign_id} queued for execution: task_id={task.id}")
     
     return CampaignResponse(
         campaign_id=campaign.campaign_id,
         name=campaign.name,
         status=campaign.status.value,
         total_contacts=campaign.total_contacts,
-        message="Campaign started",
+        message=f"Campaign started (task: {task.id})",
     )
 
 

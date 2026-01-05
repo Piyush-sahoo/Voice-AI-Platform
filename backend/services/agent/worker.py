@@ -386,27 +386,27 @@ async def entrypoint(ctx: agents.JobContext):
             # Deduplicate or process if needed, but raw list is fine for now
             logger.info(f"Call {call_id} ended. Captured {len(transcript_messages)} transcript segments.")
             
-            transcript_data = {"messages": transcript_messages}
-            
             # Update database with transcript (no local file storage for container scalability)
+            # CallRecord.transcript expects List[Dict], not {"messages": [...]}
             await update_call_in_db(call_id, {
                 "status": "completed",
                 "ended_at": datetime.now(timezone.utc),
-                "transcript": transcript_data,
+                "transcript": transcript_messages,  # Direct list, not wrapped in dict
             })
             
             # Send webhook
             await send_webhook(call_id, "completed")
             
-            # Trigger post-call analysis via Backend API (Fire and Forget)
+            # Trigger post-call analysis via Analytics Service (direct call to dedicated service)
             try:
-                API_URL = "http://gateway:8000" # Container-to-container URL
+                # Call Analytics Service directly (not via Gateway) for proper microservice separation
+                API_URL = "http://analytics:8001"  # Analytics container
                 INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "vobiz_internal_secret_key_123")
                 
                 start_time = datetime.now()
                 async with httpx.AsyncClient() as client:
                     await client.post(
-                        f"{API_URL}/api/assistants/analysis/{call_id}", 
+                        f"{API_URL}/calls/{call_id}/analyze",  # Analytics Service endpoint
                         timeout=2.0,
                         headers={"X-API-Key": INTERNAL_KEY}
                     )

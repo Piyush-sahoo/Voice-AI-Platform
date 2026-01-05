@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.routers import assistants, phone_numbers, sip_configs
 from config.cache.redis_cache import RedisCache
+from shared.database.connection import connect_to_database, close_database_connection
+from shared.settings import config
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +32,12 @@ logger = logging.getLogger("config-service")
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info("Starting Configuration Service...")
+    
+    # Connect to MongoDB (required for routers)
+    await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
+    logger.info("MongoDB connected")
+    
+    # Connect to Redis cache
     await RedisCache.connect()
     logger.info("Configuration Service ready on port 8002")
     
@@ -37,6 +45,7 @@ async def lifespan(app: FastAPI):
     
     logger.info("Shutting down Configuration Service...")
     await RedisCache.disconnect()
+    await close_database_connection()
 
 
 app = FastAPI(

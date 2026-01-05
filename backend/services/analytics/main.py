@@ -116,7 +116,7 @@ async def get_call(
 @app.post("/calls/{call_id}/analyze")
 async def analyze_call(
     call_id: str,
-    user: User = Depends(get_current_user)
+    user: Optional[User] = Depends(get_current_user_optional)  # Allow system auth via API key
 ):
     """Run post-call analysis on a call."""
     analysis = await AnalysisService.analyze_call(call_id)
