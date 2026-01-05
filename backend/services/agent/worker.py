@@ -382,16 +382,47 @@ async def entrypoint(ctx: agents.JobContext):
     async def on_shutdown():
         """Handle cleanup when call ends."""
         try:
-            # Get transcript data from our local buffer
-            # Deduplicate or process if needed, but raw list is fine for now
-            logger.info(f"Call {call_id} ended. Captured {len(transcript_messages)} transcript segments.")
+            # Get transcript data - try multiple sources
+            # Priority: 1) Local buffer (room events), 2) session.conversation_history, 3) session.chat_ctx
+            transcript_data = transcript_messages  # Start with our local buffer
+            
+            # If local buffer is empty, try to get from session
+            if not transcript_data:
+                # Try conversation_history (newer API)
+                try:
+                    if hasattr(session, 'conversation_history') and session.conversation_history:
+                        logger.info("Using session.conversation_history for transcript")
+                        for msg in session.conversation_history:
+                            role = getattr(msg, 'role', 'user')
+                            content = getattr(msg, 'content', str(msg))
+                            if isinstance(content, list):
+                                content = ' '.join([str(c) for c in content])
+                            transcript_data.append({"role": role, "content": content})
+                except Exception as e:
+                    logger.debug(f"conversation_history not available: {e}")
+            
+            # Fallback: try chat_ctx.messages
+            if not transcript_data:
+                try:
+                    if hasattr(session, 'chat_ctx') and hasattr(session.chat_ctx, 'messages'):
+                        logger.info("Using session.chat_ctx.messages for transcript")
+                        for msg in session.chat_ctx.messages:
+                            role = getattr(msg, 'role', 'user')
+                            content = getattr(msg, 'content', str(msg))
+                            if isinstance(content, list):
+                                content = ' '.join([str(c) for c in content])
+                            transcript_data.append({"role": role, "content": content})
+                except Exception as e:
+                    logger.debug(f"chat_ctx.messages not available: {e}")
+            
+            logger.info(f"Call {call_id} ended. Captured {len(transcript_data)} transcript segments.")
             
             # Update database with transcript (no local file storage for container scalability)
             # CallRecord.transcript expects List[Dict], not {"messages": [...]}
             await update_call_in_db(call_id, {
                 "status": "completed",
                 "ended_at": datetime.now(timezone.utc),
-                "transcript": transcript_messages,  # Direct list, not wrapped in dict
+                "transcript": transcript_data,  # Direct list, not wrapped in dict
             })
             
             # Send webhook
