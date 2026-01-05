@@ -348,14 +348,45 @@ async def entrypoint(ctx: agents.JobContext):
     def _on_metrics_collected(ev: MetricsCollectedEvent):
         metrics.log_metrics(ev.metrics)
         usage_collector.collect(ev.metrics)
+        
+
+
+    # --- Manual Transcript Handling ---
+    # Since RealtimeModel doesn't automatically populate session.history in this version
+    # and AgentSession attributes vary, we use a robust local buffer.
+    transcript_messages = []
+    
+    # 1. Capture Transcriptions from Room (Standard LiveKit STT)
+    # This works for any invalid transcription events published to the room
+    @ctx.room.on("transcription_received")
+    def _on_transcription_received(ev):
+        # ev is TranscriptionReceivedEvent
+        # It contains a list of segments.
+        for seg in ev.segments:
+            if not seg.final:
+                continue # Only capture final segments
+            
+            # Determine role based on participant
+            role = "user"
+            # If the participant is the agent itself, it's assistant
+            if ev.participant and ev.participant.identity == ctx.agent.identity:
+                role = "assistant"
+            elif ev.participant is None: # Sometimes null for system/agent
+                role = "assistant"
+                
+            transcript_messages.append({"role": role, "content": seg.text})
+            logger.info(f"Transcript ({role}): {seg.text}")
+
 
     # Shutdown callback
     async def on_shutdown():
         """Handle cleanup when call ends."""
         try:
-            # Get transcript data
-            transcript_data = session.history.to_dict()
-            logger.info(f"Call {call_id} ended. Transcript has {len(transcript_data.get('messages', []))} messages.")
+            # Get transcript data from our local buffer
+            # Deduplicate or process if needed, but raw list is fine for now
+            logger.info(f"Call {call_id} ended. Captured {len(transcript_messages)} transcript segments.")
+            
+            transcript_data = {"messages": transcript_messages}
             
             # Update database with transcript (no local file storage for container scalability)
             await update_call_in_db(call_id, {
@@ -370,9 +401,16 @@ async def entrypoint(ctx: agents.JobContext):
             # Trigger post-call analysis via Backend API (Fire and Forget)
             try:
                 API_URL = "http://gateway:8000" # Container-to-container URL
+                INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "vobiz_internal_secret_key_123")
+                
+                start_time = datetime.now()
                 async with httpx.AsyncClient() as client:
-                    await client.post(f"{API_URL}/api/assistants/analysis/{call_id}", timeout=2.0)
-                logger.info(f"Triggered analysis for {call_id}")
+                    await client.post(
+                        f"{API_URL}/api/assistants/analysis/{call_id}", 
+                        timeout=2.0,
+                        headers={"X-API-Key": INTERNAL_KEY}
+                    )
+                logger.info(f"Triggered analysis for {call_id} (took {(datetime.now() - start_time).total_seconds()}s)")
             except Exception as exc:
                 logger.warning(f"Failed to trigger analysis: {exc}")
             
