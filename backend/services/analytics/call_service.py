@@ -49,7 +49,9 @@ class CallService:
         if request.assistant_id:
             from services.config.assistant_service import AssistantService
             assistant_config = await AssistantService.get_assistant_for_call(request.assistant_id)
-        
+
+        logger.info(f"Assistant config: {assistant_config}")
+
         # Get SIP config
         sip_trunk_id = config.OUTBOUND_TRUNK_ID  # Default
         sip_id = request.sip_id
@@ -141,13 +143,12 @@ class CallService:
                     else:
                         voice_config = voice if isinstance(voice, dict) else {}
                     
-                    metadata_dict["voice_config"] = voice_config
-                    # Legacy fallback
-                    metadata_dict["voice_id"] = voice_config.get("voice_id", "alloy")
+                    metadata_dict["voice"] = voice_config
                 else:
                     metadata_dict["voice_id"] = "alloy"
             
             metadata = json.dumps(metadata_dict)
+            logger.info(f"DISPATCH METADATA: {metadata_dict}")
             
             # Create the room explicitly to ensure the agent can join
             try:

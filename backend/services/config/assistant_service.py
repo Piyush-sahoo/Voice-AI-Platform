@@ -166,11 +166,14 @@ class AssistantService:
         if not assistant or not assistant.is_active:
             return None
         
+        logger.info(f"Assistant data: {assistant}")
+
         return {
             "instructions": assistant.instructions,
             "first_message": assistant.first_message,
-            "voice_id": assistant.voice.voice_id if assistant.voice else "alloy",
+            "voice": assistant.voice.model_dump() if assistant.voice else {},
             "temperature": assistant.temperature,
             "webhook_url": assistant.webhook_url,
             "tools": [t.model_dump() for t in assistant.tools] if assistant.tools else [],
         }
+

@@ -60,7 +60,7 @@ export const sttProviderOptions = [
 export const llmProviderOptions = [
   { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"] },
   { id: "anthropic", name: "Anthropic", models: ["claude-3-5-sonnet", "claude-3-opus"] },
-  { id: "google", name: "Google", models: ["gemini-1.5-pro", "gemini-1.5-flash"] },
+  { id: "google", name: "Google", models: ["gemini-1.5-pro", "gemini-1.5-flash","gemini-2.0-flash"] },
   { id: "groq", name: "Groq", models: ["llama-3.1-70b", "mixtral-8x7b"] },
 ];
 
@@ -69,7 +69,7 @@ export const ttsProviderOptions = [
   { id: "openai", name: "OpenAI", models: ["tts-1", "tts-1-hd"] },
   { id: "elevenlabs", name: "ElevenLabs", models: ["eleven_turbo_v2_5", "eleven_multilingual_v2"] },
   { id: "cartesia", name: "Cartesia", models: ["sonic-3"] },
-  { id: "deepgram", name: "Deepgram", models: ["aura-asteria-en"] },
+  { id: "deepgram", name: "Deepgram", models: ["aura-asteria-en", "aura-2-andromeda-en"] },
 ];
 
 // Realtime Provider Options
