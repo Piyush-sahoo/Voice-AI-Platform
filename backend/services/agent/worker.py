@@ -6,7 +6,10 @@ import logging
 import os
 import json
 import sys
+import asyncio
 import httpx
+import math
+import time
 from datetime import datetime, timezone
 
 # Add project root to path for imports
@@ -28,6 +31,7 @@ from livekit.agents import function_tool, RunContext
 
 # Import config
 from shared.settings import config
+from shared.ai import embed_texts
 
 
 class OutboundAssistant(Agent):
@@ -222,9 +226,10 @@ async def get_inbound_assistant_config(room_name: str) -> dict:
         result = {
             "assistant_id": assistant_id,
             "assistant_name": assistant_doc.get("name", "Assistant"),
-            "system_prompt": assistant_doc.get("system_prompt", ""),
+            "system_prompt": assistant_doc.get("instructions", "") or assistant_doc.get("system_prompt", ""),
             "first_message": assistant_doc.get("first_message", ""),
             "inbound_number": inbound_number,
+            "workspace_id": assistant_doc.get("workspace_id") or phone_doc.get("workspace_id"),
         }
         
         # Also check voice_config for any custom settings
@@ -251,6 +256,7 @@ async def entrypoint(ctx: agents.JobContext):
     phone_number = None
     call_id = None
     assistant_id = None
+    workspace_id = None
     sip_trunk_id = config.OUTBOUND_TRUNK_ID
     custom_instructions = None
     first_message = None
@@ -280,6 +286,7 @@ async def entrypoint(ctx: agents.JobContext):
             data = json.loads(ctx.job.metadata)
             phone_number = data.get("phone_number")
             call_id = data.get("call_id")
+            workspace_id = data.get("workspace_id")
             assistant_id = data.get("assistant_id")
             sip_trunk_id = data.get("sip_trunk_id", config.OUTBOUND_TRUNK_ID)
             custom_instructions = data.get("instructions")
@@ -343,6 +350,87 @@ async def entrypoint(ctx: agents.JobContext):
     if assistant_id:
         logger.info(f"Using assistant: {assistant_id}")
 
+    base_system_instructions = custom_instructions or ""
+
+    # RAG database handle for low-latency retrieval during live conversation
+    rag_client = None
+    rag_db = None
+    if config.MONGODB_URI:
+        try:
+            from motor.motor_asyncio import AsyncIOMotorClient
+
+            rag_client = AsyncIOMotorClient(config.MONGODB_URI)
+            rag_db = rag_client[config.MONGODB_DB_NAME]
+        except Exception as e:
+            logger.warning(f"Failed to initialize RAG DB client: {e}")
+
+    def cosine_similarity(vec_a, vec_b) -> float:
+        if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+            return -1.0
+        dot = sum(a * b for a, b in zip(vec_a, vec_b))
+        norm_a = math.sqrt(sum(a * a for a in vec_a))
+        norm_b = math.sqrt(sum(b * b for b in vec_b))
+        if norm_a == 0 or norm_b == 0:
+            return -1.0
+        return dot / (norm_a * norm_b)
+
+    async def retrieve_relevant_chunks(user_message: str, top_k: int = 5, candidate_limit: int = 200):
+        if not rag_db or not workspace_id or not assistant_id:
+            return []
+        if not user_message or len(user_message.strip()) < 3:
+            return []
+
+        started = time.perf_counter()
+
+        query_embedding = (await embed_texts([user_message]))[0]
+        cursor = rag_db.knowledge_chunks.find(
+            {
+                "workspace_id": workspace_id,
+                "assistant_ids": assistant_id,
+            },
+            {
+                "chunk_text": 1,
+                "embedding": 1,
+            },
+        ).limit(candidate_limit)
+
+        scored = []
+        async for doc in cursor:
+            score = cosine_similarity(query_embedding, doc.get("embedding", []))
+            if score > 0:
+                scored.append((score, doc.get("chunk_text", "")))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_chunks = [text for _, text in scored[:top_k] if text]
+
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if elapsed_ms > 100:
+            logger.warning(
+                "RAG retrieval exceeded 100ms (%.2fms) workspace=%s assistant=%s",
+                elapsed_ms,
+                workspace_id,
+                assistant_id,
+            )
+        else:
+            logger.debug("RAG retrieval %.2fms, chunks=%s", elapsed_ms, len(top_chunks))
+
+        return top_chunks
+
+    agent_instance = OutboundAssistant(custom_instructions)
+
+    async def apply_rag_to_runtime_instructions(user_message: str):
+        if not base_system_instructions:
+            return
+        try:
+            top_chunks = await retrieve_relevant_chunks(user_message)
+            if top_chunks:
+                relevant = "\n\nRelevant Knowledge:\n" + "\n\n".join(top_chunks)
+                agent_instance.instructions = base_system_instructions + relevant
+            else:
+                agent_instance.instructions = base_system_instructions
+        except Exception as exc:
+            logger.warning(f"RAG enrichment failed: {exc}")
+
     # Metrics collection
     usage_collector = metrics.UsageCollector()
 
@@ -378,6 +466,8 @@ async def entrypoint(ctx: agents.JobContext):
                 
             transcript_messages.append({"role": role, "content": seg.text})
             logger.info(f"Transcript ({role}): {seg.text}")
+            if role == "user":
+                asyncio.create_task(apply_rag_to_runtime_instructions(seg.text))
 
 
     # Shutdown callback
@@ -453,13 +543,16 @@ async def entrypoint(ctx: agents.JobContext):
             
         except Exception as e:
             logger.error(f"Shutdown callback failed: {e}")
+        finally:
+            if rag_client:
+                rag_client.close()
 
     ctx.add_shutdown_callback(on_shutdown)
 
     # Start session
     await session.start(
         room=ctx.room,
-        agent=OutboundAssistant(custom_instructions),
+        agent=agent_instance,
         room_input_options=RoomInputOptions(
             # noise_cancellation=noise_cancellation.BVCTelephony(),
             close_on_disconnect=False,  # Keep session alive for proper cleanup
@@ -485,6 +578,11 @@ async def entrypoint(ctx: agents.JobContext):
                 You are a helpful customer service assistant.
                 Be polite, professional, and assist the caller with their needs.
             """
+            base_system_instructions = effective_instructions
+            agent_instance.instructions = effective_instructions
+
+            if not workspace_id:
+                workspace_id = inbound_config.get("workspace_id")
             
             # Use first_message from metadata, then from assistant, then default
             effective_greeting = first_message or inbound_first_message or "Hello! Thank you for calling. How can I assist you today?"

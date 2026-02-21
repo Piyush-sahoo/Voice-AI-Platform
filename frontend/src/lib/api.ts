@@ -37,10 +37,14 @@ export async function apiRequest<T>(
 
     const token = getAccessToken();
 
+    const isFormData = body instanceof FormData;
     const requestHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
         ...headers,
     };
+
+    if (!isFormData) {
+        requestHeaders["Content-Type"] = "application/json";
+    }
 
     if (token) {
         requestHeaders["Authorization"] = `Bearer ${token}`;
@@ -49,7 +53,7 @@ export async function apiRequest<T>(
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method,
         headers: requestHeaders,
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
     });
 
     if (response.status === 401) {
@@ -80,14 +84,31 @@ export const api = {
     delete: <T>(endpoint: string) => apiRequest<T>(endpoint, { method: "DELETE" }),
 };
 
+interface AssistantLite {
+    assistant_id: string;
+    name: string;
+}
+
+interface KnowledgeListResponse {
+    documents: unknown[];
+    count: number;
+}
+
 // API endpoint functions
 export const assistantsApi = {
-    list: () => api.get<{ assistants: unknown[]; count: number }>("/api/assistants"),
+    list: () => api.get<{ assistants: AssistantLite[]; count: number }>("/api/assistants"),
     get: (id: string) => api.get<unknown>(`/api/assistants/${id}`),
     create: (data: unknown) => api.post<unknown>("/api/assistants", data),
     update: (id: string, data: unknown) => api.patch<unknown>(`/api/assistants/${id}`, data),
     delete: (id: string) => api.delete<unknown>(`/api/assistants/${id}`),
     testWebhook: (id: string, webhook_url: string) => api.post<unknown>(`/api/assistants/${id}/test-webhook`, { webhook_url }),
+};
+
+export const knowledgeApi = {
+    list: () => api.get<KnowledgeListResponse>("/api/knowledge"),
+    create: (data: FormData) => api.post<unknown>("/api/knowledge", data),
+    delete: (id: string) => api.delete<unknown>(`/api/knowledge/${id}`),
+    resync: (id: string) => api.post<unknown>(`/api/knowledge/${id}/resync`),
 };
 
 export const campaignsApi = {

@@ -123,6 +123,7 @@ class CallService:
             metadata_dict = {
                 "phone_number": call.phone_number,
                 "call_id": call.call_id,
+                "workspace_id": call.workspace_id,
                 "assistant_id": call.assistant_id,
                 "sip_trunk_id": sip_trunk_id or config.OUTBOUND_TRUNK_ID,
                 "instructions": call.instructions,

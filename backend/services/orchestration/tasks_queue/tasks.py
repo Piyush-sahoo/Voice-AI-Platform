@@ -3,13 +3,217 @@ Celery tasks for campaign execution.
 """
 import logging
 import asyncio
+import re
+from io import BytesIO
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, List
+from urllib.parse import urlparse
 
+import boto3
+import httpx
+import tiktoken
+from bson import ObjectId
+from docx import Document as DocxDocument
+from PyPDF2 import PdfReader
 from celery import group
 from .celery_app import celery_app
+from shared.ai import embed_texts
+from shared.settings import config
 
 logger = logging.getLogger("queue.tasks")
+
+
+def _token_count(text: str, encoder) -> int:
+    if not text:
+        return 0
+    return len(encoder.encode(text))
+
+
+def _chunk_text(text: str, encoder, chunk_size: int = 700, overlap: int = 100) -> List[Dict[str, Any]]:
+    token_ids = encoder.encode(text)
+    if not token_ids:
+        return []
+
+    chunks: List[Dict[str, Any]] = []
+    start = 0
+    while start < len(token_ids):
+        end = min(start + chunk_size, len(token_ids))
+        chunk_tokens = token_ids[start:end]
+        chunks.append(
+            {
+                "chunk_text": encoder.decode(chunk_tokens),
+                "token_count": len(chunk_tokens),
+            }
+        )
+        if end == len(token_ids):
+            break
+        start = max(0, end - overlap)
+
+    return chunks
+
+
+def _extract_text_from_pdf(file_bytes: bytes) -> str:
+    reader = PdfReader(BytesIO(file_bytes))
+    pages = [(page.extract_text() or "") for page in reader.pages]
+    return "\n".join(pages)
+
+
+def _extract_text_from_docx(file_bytes: bytes) -> str:
+    document = DocxDocument(BytesIO(file_bytes))
+    return "\n".join([paragraph.text for paragraph in document.paragraphs if paragraph.text])
+
+
+def _guess_file_extension(storage_url: str) -> str:
+    parsed = urlparse(storage_url)
+    key = parsed.path.lower()
+    if key.endswith(".pdf"):
+        return "pdf"
+    if key.endswith(".docx"):
+        return "docx"
+    return "txt"
+
+
+def _strip_html(raw_html: str) -> str:
+    no_script = re.sub(r"<script.*?>.*?</script>", "", raw_html, flags=re.IGNORECASE | re.DOTALL)
+    no_style = re.sub(r"<style.*?>.*?</style>", "", no_script, flags=re.IGNORECASE | re.DOTALL)
+    no_tags = re.sub(r"<[^>]+>", " ", no_style)
+    normalized = re.sub(r"\s+", " ", no_tags)
+    return normalized.strip()
+
+
+async def _load_document_text(doc: Dict[str, Any]) -> str:
+    source_type = doc.get("source_type")
+
+    if source_type == "text":
+        return (doc.get("raw_text") or "").strip()
+
+    if source_type == "url":
+        source_url = (doc.get("source_url") or "").strip()
+        if not source_url:
+            raise ValueError("Knowledge URL source is missing source_url")
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(source_url)
+            response.raise_for_status()
+            return _strip_html(response.text)
+
+    storage_url = doc.get("storage_url")
+    if not storage_url or not str(storage_url).startswith("s3://"):
+        raise ValueError("Knowledge file source is missing storage_url")
+
+    parsed = urlparse(storage_url)
+    bucket = parsed.netloc
+    key = parsed.path.lstrip("/")
+
+    s3 = boto3.client(
+        "s3",
+        aws_access_key_id=config.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
+        region_name=config.AWS_REGION,
+    )
+    object_bytes = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+
+    ext = _guess_file_extension(storage_url)
+    if ext == "pdf":
+        return _extract_text_from_pdf(object_bytes)
+    if ext == "docx":
+        return _extract_text_from_docx(object_bytes)
+    return object_bytes.decode("utf-8", errors="ignore")
+
+
+async def _ingest_knowledge_async(document_id: str) -> Dict[str, Any]:
+    from shared.database.connection import connect_to_database, get_database
+
+    await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
+    db = get_database()
+
+    if not ObjectId.is_valid(document_id):
+        raise ValueError("Invalid knowledge document id")
+
+    mongo_id = ObjectId(document_id)
+    doc = await db.knowledge_documents.find_one({"_id": mongo_id})
+    if not doc:
+        raise ValueError("Knowledge document not found")
+
+    workspace_id = doc.get("workspace_id")
+    assistant_ids = doc.get("assigned_assistant_ids", [])
+
+    try:
+        await db.knowledge_documents.update_one(
+            {"_id": mongo_id},
+            {"$set": {"status": "processing", "error_message": None}},
+        )
+
+        content = (await _load_document_text(doc)).strip()
+        if not content:
+            raise ValueError("No extractable text found in source")
+
+        encoder = tiktoken.get_encoding("cl100k_base")
+        total_tokens = _token_count(content, encoder)
+        raw_chunks = _chunk_text(content, encoder, chunk_size=700, overlap=100)
+
+        await db.knowledge_chunks.delete_many({"document_id": document_id})
+
+        chunk_texts = [chunk["chunk_text"] for chunk in raw_chunks]
+        embeddings = await embed_texts(chunk_texts)
+
+        if len(embeddings) != len(raw_chunks):
+            raise ValueError("Embedding count mismatch")
+
+        rows = []
+        for idx, chunk in enumerate(raw_chunks):
+            rows.append(
+                {
+                    "workspace_id": workspace_id,
+                    "document_id": document_id,
+                    "document_name": doc.get("name", "Untitled"),
+                    "assistant_ids": assistant_ids,
+                    "chunk_text": chunk["chunk_text"],
+                    "embedding": embeddings[idx],
+                    "token_count": chunk["token_count"],
+                }
+            )
+
+        if rows:
+            await db.knowledge_chunks.insert_many(rows, ordered=False)
+
+        now = datetime.now(timezone.utc)
+        await db.knowledge_documents.update_one(
+            {"_id": mongo_id},
+            {
+                "$set": {
+                    "status": "ready",
+                    "error_message": None,
+                    "token_count": total_tokens,
+                    "last_synced_at": now,
+                }
+            },
+        )
+
+        logger.info(
+            "Knowledge ingest complete: document_id=%s chunks=%s workspace=%s",
+            document_id,
+            len(rows),
+            workspace_id,
+        )
+        return {
+            "success": True,
+            "document_id": document_id,
+            "chunks": len(rows),
+            "token_count": total_tokens,
+        }
+
+    except Exception as exc:
+        await db.knowledge_documents.update_one(
+            {"_id": mongo_id},
+            {
+                "$set": {
+                    "status": "error",
+                    "error_message": str(exc),
+                }
+            },
+        )
+        logger.error("Knowledge ingest failed for %s: %s", document_id, exc)
+        raise
 
 
 def run_async(coro):
@@ -193,3 +397,21 @@ def health_check() -> Dict[str, Any]:
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    autoretry_for=(ConnectionError, TimeoutError),
+    retry_backoff=True,
+    retry_backoff_max=120,
+)
+def ingest_knowledge(self, document_id: str) -> Dict[str, Any]:
+    """Ingest a knowledge document and persist chunks + embeddings."""
+    logger.info("[Task %s] Starting knowledge ingest for document=%s", self.request.id, document_id)
+    try:
+        return run_async(_ingest_knowledge_async(document_id))
+    except Exception as exc:
+        logger.error("[Task %s] Knowledge ingest failed for %s: %s", self.request.id, document_id, exc)
+        raise

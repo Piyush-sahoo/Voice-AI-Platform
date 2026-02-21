@@ -8,8 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { KnowledgeItem, formatFileSize } from "@/data/mockKnowledge";
-import { mockAgents } from "@/data/mockAgents";
+import { KnowledgeItem, formatFileSize } from "@/types/knowledge";
 import { RefreshCw, Trash2, FileText, Globe, AlignLeft, Bot } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,6 +18,7 @@ interface KnowledgeDetailSheetProps {
   knowledge: KnowledgeItem | null;
   onDelete: (id: string) => void;
   onResync: (id: string) => void;
+  assistantNamesById: Record<string, string>;
 }
 
 export function KnowledgeDetailSheet({
@@ -27,6 +27,7 @@ export function KnowledgeDetailSheet({
   knowledge,
   onDelete,
   onResync,
+  assistantNamesById,
 }: KnowledgeDetailSheetProps) {
   if (!knowledge) return null;
 
@@ -53,7 +54,7 @@ export function KnowledgeDetailSheet({
   };
 
   const assignedAgentNames = knowledge.assignedAgents
-    .map((id) => mockAgents.find((a) => a.id === id)?.name)
+    .map((id) => assistantNamesById[id])
     .filter(Boolean);
 
   const handleResync = () => {

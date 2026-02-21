@@ -14,6 +14,11 @@ from .models import (
     CreateAssistantRequest,
     UpdateAssistantRequest,
     AssistantResponse,
+    # Knowledge models
+    KnowledgeDocument,
+    KnowledgeChunk,
+    KnowledgeSourceType,
+    KnowledgeStatus,
 )
 
 __all__ = [
@@ -34,4 +39,9 @@ __all__ = [
     "CreateAssistantRequest",
     "UpdateAssistantRequest",
     "AssistantResponse",
+    # Knowledge models
+    "KnowledgeDocument",
+    "KnowledgeChunk",
+    "KnowledgeSourceType",
+    "KnowledgeStatus",
 ]
