@@ -29,6 +29,5 @@ passlib[bcrypt]>=1.7.4
 # AI Analysis
 google-generativeai>=0.3.0
 boto3>=1.34.0
-
-
-
+sentence-transformers>=2.2.2
+qdrant-client>=1.7.0

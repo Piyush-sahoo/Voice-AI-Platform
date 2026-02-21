@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dotenv import load_dotenv
 from livekit import agents, api
 from livekit.agents import AgentSession, Agent, RoomInputOptions, metrics, MetricsCollectedEvent
-from livekit.plugins import openai, noise_cancellation
+from livekit.plugins import openai
 
 # Load environment variables
 load_dotenv(".env.local")
@@ -461,7 +461,7 @@ async def entrypoint(ctx: agents.JobContext):
         room=ctx.room,
         agent=OutboundAssistant(custom_instructions),
         room_input_options=RoomInputOptions(
-            noise_cancellation=noise_cancellation.BVCTelephony(),
+            # noise_cancellation=noise_cancellation.BVCTelephony(),
             close_on_disconnect=False,  # Keep session alive for proper cleanup
         ),
     )
@@ -518,7 +518,7 @@ async def entrypoint(ctx: agents.JobContext):
                     sip_trunk_id=sip_trunk_id,
                     sip_call_to=phone_number,
                     participant_identity=f"sip_{phone_number}",
-                    wait_until_answered=False,  # Don't block - let the call connect async
+                    wait_until_answered=True,  # Don't block - let the call connect async
                 )
             )
             logger.info("Call answered! Agent is now listening.")
