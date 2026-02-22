@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
-import google.generativeai as genai
+from google import genai
 
 from shared.database.models import CallRecord, CallAnalysis
 from shared.database.connection import get_database
@@ -30,11 +30,11 @@ CALL CONTEXT:
 
 Analyze this call and respond in JSON format:
 {{
-    "success": true/false,  // Did the call achieve its intended goal?
-    "sentiment": "positive/neutral/negative",  // Overall customer sentiment
+    "success": true/false,
+    "sentiment": "positive/neutral/negative",
     "summary": "2-3 sentence summary of the conversation",
-    "key_topics": ["topic1", "topic2"],  // Main discussion points
-    "action_items": ["action1", "action2"]  // Follow-ups needed, if any
+    "key_topics": ["topic1", "topic2"],
+    "action_items": ["action1", "action2"]
 }}
 
 Respond ONLY with the JSON, no other text."""
@@ -43,12 +43,6 @@ Respond ONLY with the JSON, no other text."""
     async def analyze_call(call_id: str) -> Optional[CallAnalysis]:
         """
         Analyze a completed call using Gemini.
-        
-        Args:
-            call_id: The call ID to analyze
-            
-        Returns:
-            CallAnalysis with results, or None if analysis failed
         """
         if not config.GOOGLE_API_KEY:
             logger.warning("GOOGLE_API_KEY not configured, skipping analysis")
@@ -56,7 +50,6 @@ Respond ONLY with the JSON, no other text."""
         
         db = get_database()
         
-        # Get call record
         doc = await db.calls.find_one({"call_id": call_id})
         if not doc:
             logger.error(f"Call not found: {call_id}")
@@ -69,14 +62,11 @@ Respond ONLY with the JSON, no other text."""
             return None
         
         try:
-            # Configure Gemini
-            genai.configure(api_key=config.GOOGLE_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-pro')
-            
-            # Format transcript for analysis
+            # Create Gemini client (new SDK)
+            client = genai.Client(api_key=config.GOOGLE_API_KEY)
+
             transcript_text = AnalysisService._format_transcript(call.transcript)
             
-            # Build prompt
             prompt = AnalysisService.ANALYSIS_PROMPT.format(
                 transcript=transcript_text,
                 phone_number=call.phone_number,
@@ -86,10 +76,11 @@ Respond ONLY with the JSON, no other text."""
             
             logger.info(f"Analyzing call {call_id} with Gemini...")
             
-            # Generate analysis
-            response = await model.generate_content_async(prompt)
+            response = await client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=prompt,
+            )
             
-            # Parse response
             analysis_data = AnalysisService._parse_response(response.text)
             
             if analysis_data:
@@ -102,7 +93,6 @@ Respond ONLY with the JSON, no other text."""
                     analyzed_at=datetime.now(timezone.utc),
                 )
                 
-                # Save to database
                 await db.calls.update_one(
                     {"call_id": call_id},
                     {"$set": {"analysis": analysis.model_dump()}},
@@ -120,15 +110,12 @@ Respond ONLY with the JSON, no other text."""
     
     @staticmethod
     def _format_transcript(transcript: List[Dict[str, Any]]) -> str:
-        """Format transcript for analysis."""
         lines = []
         for item in transcript:
             role = item.get("role", "unknown")
             content = item.get("content", "")
             
-            # Handle different content formats
             if isinstance(content, list):
-                # Content might be a list of parts
                 text_parts = []
                 for part in content:
                     if isinstance(part, dict) and "text" in part:
@@ -145,12 +132,9 @@ Respond ONLY with the JSON, no other text."""
     
     @staticmethod
     def _parse_response(response_text: str) -> Optional[Dict[str, Any]]:
-        """Parse Gemini's JSON response."""
         try:
-            # Try to extract JSON from response
             text = response_text.strip()
             
-            # Remove markdown code blocks if present
             if text.startswith("```json"):
                 text = text[7:]
             if text.startswith("```"):
