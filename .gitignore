@@ -26,6 +26,7 @@ Thumbs.db
 
 # Local Development & Testing
 example/
+learning/
 temp_reference/
 backend/venv/
 backend/.venv/
