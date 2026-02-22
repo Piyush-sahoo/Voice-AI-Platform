@@ -1,27 +1,34 @@
 """Embedding helpers for RAG ingestion and retrieval."""
+import asyncio
 import logging
 from typing import List
 
-from .openai_client import get_openai_client
+import google.generativeai as genai
+
+from shared.settings import config
 
 logger = logging.getLogger("ai.embeddings")
 
 
-async def embed_texts(texts: List[str], batch_size: int = 50) -> List[List[float]]:
-    """Embed a list of texts using OpenAI with internal batching."""
+async def embed_texts(texts: List[str]) -> List[List[float]]:
+    """Embed a list of texts using Gemini embedding model."""
     if not texts:
         return []
 
-    client = get_openai_client()
-    embeddings: List[List[float]] = []
+    if not config.GOOGLE_API_KEY:
+        raise ValueError("GOOGLE_API_KEY is required for Gemini embeddings")
 
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        response = await client.embeddings.create(
-            model="text-embedding-3-small",
-            input=batch,
+    genai.configure(api_key=config.GOOGLE_API_KEY)
+
+    def _embed_single(text: str) -> List[float]:
+        response = genai.embed_content(
+            model="models/embedding-001",
+            content=text,
+            task_type="retrieval_document",
         )
-        embeddings.extend([item.embedding for item in response.data])
+        return response["embedding"]
+
+    embeddings = await asyncio.gather(*[asyncio.to_thread(_embed_single, text) for text in texts])
 
     logger.debug("Generated %s embeddings", len(embeddings))
     return embeddings
