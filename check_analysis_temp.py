@@ -3,7 +3,7 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
-load_dotenv("backend/.env.local")
+load_dotenv("backend/.env")
 
 async def check_analysis():
     uri = os.getenv("MONGODB_URI")

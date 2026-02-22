@@ -6,6 +6,8 @@ livekit-plugins-deepgram
 livekit-plugins-google
 
 python-dotenv>=1.0.0
+livekit-plugins-deepgram
+livekit-plugins-google
 
 
 # REST API
@@ -37,5 +39,10 @@ tiktoken>=0.7.0
 PyPDF2>=3.0.0
 python-docx>=1.1.0
 
+# RAG Knowledge Pipeline
+tiktoken>=0.6.0
+PyPDF2>=3.0.0
+python-docx>=1.1.0
+python-multipart>=0.0.9
 
 
