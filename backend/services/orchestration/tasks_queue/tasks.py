@@ -411,7 +411,9 @@ def ingest_knowledge(self, document_id: str) -> Dict[str, Any]:
     """Ingest a knowledge document and persist chunks + embeddings."""
     logger.info("[Task %s] Starting knowledge ingest for document=%s", self.request.id, document_id)
     try:
-        return run_async(_ingest_knowledge_async(document_id))
+        result = run_async(_ingest_knowledge_async(document_id))
+        logger.info("[Task %s] Knowledge ingest completed successfully", self.request.id)
+        return result
     except Exception as exc:
         logger.error("[Task %s] Knowledge ingest failed for %s: %s", self.request.id, document_id, exc)
         raise
