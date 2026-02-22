@@ -228,36 +228,21 @@ async def get_inbound_assistant_config(room_name: str) -> dict:
         }
         
         # Also check voice_config for any custom settings
-        voice_config = assistant_doc.get("voice_config", {})
+        voice_config = assistant_doc.get("voice", {})
         if voice_config:
             result["voice_config"] = voice_config
         
         logger.info(f"[INBOUND] Loaded assistant '{result['assistant_name']}' for inbound call")
+        logger.info(f"[INBOUND] >>> payload of result = '{result}' for inbound call")
         return result
         
     except Exception as e:
         logger.error(f"Failed to get inbound assistant config: {e}")
         return {}
 
-
-async def entrypoint(ctx: agents.JobContext):
-    """Main entrypoint for the agent."""
-    logger.info(f"Connecting to room: {ctx.room.name}")
-    
-    # Import model factory
-    from services.agent.model_factory import get_stt, get_llm, get_tts, get_realtime_model
-    
-    # Parse metadata
-    phone_number = None
-    call_id = None
-    assistant_id = None
-    sip_trunk_id = config.OUTBOUND_TRUNK_ID
-    custom_instructions = None
-    first_message = None
-    webhook_url = None
-    temperature = 0.8
-    
+def update_voice_config(metadata_dict: dict, is_inbound: bool, inbound_config: dict) -> dict:
     # Voice configuration (user-selectable models)
+    #DEFAULT
     voice_config = {
         "mode": "realtime",  # realtime or pipeline
         "voice_id": config.OPENAI_REALTIME_VOICE,
@@ -274,7 +259,43 @@ async def entrypoint(ctx: agents.JobContext):
         "tts_provider": "openai",
         "tts_model": "tts-1",
     }
+
+    if is_inbound and inbound_config: # inbound
+        voice_config.update(inbound_config.get("voice_config", {}))
+    else:   # outbound
+        if metadata_dict:
+            temperature = metadata_dict.get("temperature", 0.8)
+            if "voice" in metadata_dict:
+                voice_config.update(metadata_dict.get("voice", {}))
+            
+            voice_config["temperature"] = temperature
+
+    logger.info(f" >>> Updated voice_config in entry point => voice_config = {voice_config}")
+
+    return voice_config
+
+
+async def entrypoint(ctx: agents.JobContext):
+    """Main entrypoint for the agent."""
+    logger.info(f"Connecting to room: {ctx.room.name}")
     
+    # Import model factory
+    from services.agent.model_factory import get_stt, get_llm, get_tts, get_realtime_model
+
+    # PART-1: METADATA CREATION AND PARSING
+
+    # Parse metadata
+    phone_number = None
+    call_id = None
+    assistant_id = None
+    sip_trunk_id = config.OUTBOUND_TRUNK_ID
+    custom_instructions = None
+    first_message = None
+    webhook_url = None
+
+    inbound_config = None
+    data = {}
+
     try:
         if ctx.job.metadata:
             data = json.loads(ctx.job.metadata)
@@ -285,27 +306,15 @@ async def entrypoint(ctx: agents.JobContext):
             custom_instructions = data.get("instructions")
             first_message = data.get("first_message")
             webhook_url = data.get("webhook_url")
-            temperature = data.get("temperature", 0.8)
-            
-            # Update voice_config from metadata (user-selected settings)
-            if "voice_config" in data:
-                voice_config.update(data["voice_config"])
-            elif "voice" in data:
-                voice_config.update(data["voice"])
-            elif "voice_id" in data:
-                voice_config["voice_id"] = data["voice_id"]
-
-            
-            voice_config["temperature"] = temperature
             
     except Exception:
         logger.warning("No valid JSON metadata found.")
 
+    # PART-2: DETECTING THE TYPE OF CALL (INBOUND VS OUTBOUND)
     # Use room name as call_id if not provided
     if not call_id:
         call_id = ctx.room.name
     
-    # Detect inbound vs outbound call
     # Inbound: room name starts with "inbound-"
     # Outbound: has phone_number in metadata
     if ctx.room.name.startswith("inbound-"):
@@ -318,16 +327,24 @@ async def entrypoint(ctx: agents.JobContext):
     
     if is_inbound:
         logger.info(f"[INBOUND CALL] Room: {ctx.room.name}")
+        # Fetch the assistant config for this inbound call
+        inbound_config = await get_inbound_assistant_config(ctx.room.name)
+        if not inbound_config:
+            inbound_config = {}
     else:
         logger.info(f"[OUTBOUND CALL] To: {phone_number} (Room: {ctx.room.name})")
 
-    # Create session based on mode
+    # PART-3: UPDATING THE VOICE CONFIG FOR BOTH INBOUND AND OUTBOUND
+    voice_config = update_voice_config(data, is_inbound, inbound_config)
+
+    # PART-4: CREATE SESSION BASED ON MODE
+
     mode = voice_config.get("mode", "realtime")
     logger.info(f"Creating agent session: mode={mode}")
     
     if mode == "pipeline":
         # Pipeline mode: STT → LLM → TTS (more flexible)
-        logger.info(f"Pipeline: STT={voice_config.get('stt_provider')}, LLM={voice_config.get('llm_provider')}, TTS={voice_config.get('tts_provider')}")
+        logger.info(f"Pipeline: >>> STT={voice_config.get('stt_provider')}, LLM={voice_config.get('llm_provider')}, TTS={voice_config.get('tts_provider')}")
         session = AgentSession(
             stt=get_stt(voice_config),
             llm=get_llm(voice_config),
@@ -335,7 +352,7 @@ async def entrypoint(ctx: agents.JobContext):
         )
     else:
         # Realtime mode: Speech-to-Speech (lowest latency)
-        logger.info(f"Realtime: provider={voice_config.get('realtime_provider')}, voice={voice_config.get('voice_id')}")
+        logger.info(f"Realtime: >>> provider={voice_config.get('realtime_provider')}, voice={voice_config.get('voice_id')}")
         session = AgentSession(
             llm=get_realtime_model(voice_config),
         )
@@ -469,13 +486,12 @@ async def entrypoint(ctx: agents.JobContext):
     if is_inbound:
         # ========== INBOUND CALL ==========
         # Caller is already in the room - greet them with dynamic prompts
-        logger.info("[INBOUND] Caller connected, fetching assistant config...")
+        logger.info("[INBOUND] Caller connected, initialising prompts and starting conversation")
         
         try:
-            # Fetch the assistant config for this inbound call
-            inbound_config = await get_inbound_assistant_config(ctx.room.name)
             
             # Get prompts from assistant config, with fallbacks
+
             inbound_system_prompt = inbound_config.get("system_prompt", "")
             inbound_first_message = inbound_config.get("first_message", "")
             inbound_assistant_id = inbound_config.get("assistant_id", "")
