@@ -168,7 +168,7 @@ services:
       context: ./backend
       dockerfile: services/orchestration/Dockerfile
     container_name: vobiz-celery
-    command: celery -A services.orchestration.tasks_queue.celery_app worker -Q knowledge,calls,campaigns --loglevel=info --concurrency=4
+    command: celery -A services.orchestration.tasks_queue.celery_app worker -Q knowledge,calls,campaigns --loglevel=info
     env_file:
       - ./backend/.env
     environment:
