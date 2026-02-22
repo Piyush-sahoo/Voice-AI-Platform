@@ -290,9 +290,11 @@ async def entrypoint(ctx: agents.JobContext):
             # Update voice_config from metadata (user-selected settings)
             if "voice_config" in data:
                 voice_config.update(data["voice_config"])
-            # Legacy support for simple voice_id
+            elif "voice" in data:
+                voice_config.update(data["voice"])
             elif "voice_id" in data:
                 voice_config["voice_id"] = data["voice_id"]
+
             
             voice_config["temperature"] = temperature
             
