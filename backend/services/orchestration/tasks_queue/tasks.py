@@ -4,6 +4,7 @@ Celery tasks for campaign execution.
 import logging
 import asyncio
 import re
+import time
 from io import BytesIO
 from datetime import datetime, timezone
 from typing import Dict, Any, List
@@ -16,9 +17,12 @@ from bson import ObjectId
 from docx import Document as DocxDocument
 from PyPDF2 import PdfReader
 from celery import group
+from qdrant_client.http import models as qdrant_models
 from .celery_app import celery_app
-from shared.ai import embed_texts
+from shared.embeddings import embed_batch
+from shared.retrieval import delete_document_vectors, upsert_points
 from shared.settings import config
+import uuid
 
 logger = logging.getLogger("queue.tasks")
 
@@ -29,25 +33,25 @@ def _token_count(text: str, encoder) -> int:
     return len(encoder.encode(text))
 
 
-def _chunk_text(text: str, encoder, chunk_size: int = 700, overlap: int = 100) -> List[Dict[str, Any]]:
-    token_ids = encoder.encode(text)
-    if not token_ids:
+def _chunk_text(text: str, chunk_words: int = 550, overlap_words: int = 100) -> List[Dict[str, Any]]:
+    words = text.split()
+    if not words:
         return []
 
     chunks: List[Dict[str, Any]] = []
     start = 0
-    while start < len(token_ids):
-        end = min(start + chunk_size, len(token_ids))
-        chunk_tokens = token_ids[start:end]
+    while start < len(words):
+        end = min(start + chunk_words, len(words))
+        chunk_words_list = words[start:end]
         chunks.append(
             {
-                "chunk_text": encoder.decode(chunk_tokens),
-                "token_count": len(chunk_tokens),
+                "chunk_text": " ".join(chunk_words_list),
+                "token_count": len(chunk_words_list),
             }
         )
-        if end == len(token_ids):
+        if end == len(words):
             break
-        start = max(0, end - overlap)
+        start = max(0, end - overlap_words)
 
     return chunks
 
@@ -136,6 +140,8 @@ async def _ingest_knowledge_async(document_id: str) -> Dict[str, Any]:
 
     workspace_id = doc.get("workspace_id")
     assistant_ids = doc.get("assigned_assistant_ids", [])
+    user_id = str(doc.get("user_id") or workspace_id or "")
+    ingestion_started = time.perf_counter()
 
     try:
         await db.knowledge_documents.update_one(
@@ -147,20 +153,25 @@ async def _ingest_knowledge_async(document_id: str) -> Dict[str, Any]:
         if not content:
             raise ValueError("No extractable text found in source")
 
+        content = re.sub(r"\s+", " ", content).strip()
+
         encoder = tiktoken.get_encoding("cl100k_base")
         total_tokens = _token_count(content, encoder)
-        raw_chunks = _chunk_text(content, encoder, chunk_size=700, overlap=100)
+        raw_chunks = _chunk_text(content, chunk_words=550, overlap_words=100)
 
         await db.knowledge_chunks.delete_many({"document_id": document_id})
 
         chunk_texts = [chunk["chunk_text"] for chunk in raw_chunks]
-        embeddings = await embed_texts(chunk_texts)
+        embeddings = await asyncio.to_thread(embed_batch, chunk_texts)
 
         if len(embeddings) != len(raw_chunks):
             raise ValueError("Embedding count mismatch")
 
+        await asyncio.to_thread(delete_document_vectors, document_id)
+
+        points: List[qdrant_models.PointStruct] = []
         rows = []
-        for idx, chunk in enumerate(raw_chunks):
+        for idx, (chunk, embedding) in enumerate(zip(raw_chunks, embeddings)):
             rows.append(
                 {
                     "workspace_id": workspace_id,
@@ -168,10 +179,33 @@ async def _ingest_knowledge_async(document_id: str) -> Dict[str, Any]:
                     "document_name": doc.get("name", "Untitled"),
                     "assistant_ids": assistant_ids,
                     "chunk_text": chunk["chunk_text"],
-                    "embedding": embeddings[idx],
+                    "embedding": embedding,
                     "token_count": chunk["token_count"],
                 }
             )
+
+            target_assistant_ids = assistant_ids or [""]
+            for assistant_id in target_assistant_ids:
+                points.append(
+                    qdrant_models.PointStruct(
+                        id = str(
+                        uuid.uuid5(
+                        uuid.NAMESPACE_DNS,
+                        f"{document_id}:{assistant_id}:{idx}"
+                    )
+                    ),
+                        vector=embedding,
+                        payload={
+                            "document_id": str(document_id),
+                            "assistant_id": str(assistant_id),
+                            "user_id": user_id,
+                            "chunk_id": f"{document_id}:{idx}",
+                            "text": chunk["chunk_text"],
+                        },
+                    )
+                )
+
+        await asyncio.to_thread(upsert_points, points)
 
         if rows:
             await db.knowledge_chunks.insert_many(rows, ordered=False)
@@ -184,21 +218,24 @@ async def _ingest_knowledge_async(document_id: str) -> Dict[str, Any]:
                     "status": "ready",
                     "error_message": None,
                     "token_count": total_tokens,
+                    "chunk_count": len(raw_chunks),
                     "last_synced_at": now,
                 }
             },
         )
 
+        ingestion_time = time.perf_counter() - ingestion_started
         logger.info(
-            "Knowledge ingest complete: document_id=%s chunks=%s workspace=%s",
+            "Knowledge ingest complete: document_id=%s chunk_count=%s ingestion_time=%.3fs errors=none workspace=%s",
             document_id,
-            len(rows),
+            len(raw_chunks),
+            ingestion_time,
             workspace_id,
         )
         return {
             "success": True,
             "document_id": document_id,
-            "chunks": len(rows),
+            "chunks": len(raw_chunks),
             "token_count": total_tokens,
         }
 
@@ -207,12 +244,19 @@ async def _ingest_knowledge_async(document_id: str) -> Dict[str, Any]:
             {"_id": mongo_id},
             {
                 "$set": {
-                    "status": "error",
+                    "status": "failed",
                     "error_message": str(exc),
                 }
             },
         )
-        logger.error("Knowledge ingest failed for %s: %s", document_id, exc)
+        ingestion_time = time.perf_counter() - ingestion_started
+        logger.error(
+            "Knowledge ingest failed: document_id=%s ingestion_time=%.3fs chunk_count=%s errors=%s",
+            document_id,
+            ingestion_time,
+            0,
+            str(exc),
+        )
         raise
 
 

@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   # ===================
   # FRONTEND
@@ -134,14 +136,16 @@ services:
     environment:
       - REDIS_HOST=redis
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       - redis
+      - qdrant
     restart: unless-stopped
     networks:
       - vobiz-network
 
   # ===================
-  # REDIS (Queue & Cache)
+  # REDIS
   # ===================
   redis:
     image: redis:7-alpine
@@ -161,7 +165,7 @@ services:
       retries: 5
 
   # ===================
-  # CELERY WORKER (Job Queue)
+  # CELERY WORKER
   # ===================
   celery-worker:
     build:
@@ -173,8 +177,24 @@ services:
       - ./backend/.env
     environment:
       - REDIS_HOST=redis
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       - redis
+      - qdrant
+    restart: unless-stopped
+    networks:
+      - vobiz-network
+
+  # ===================
+  # QDRANT VECTOR DB
+  # ===================
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: vobiz-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
     restart: unless-stopped
     networks:
       - vobiz-network
@@ -184,6 +204,7 @@ services:
 # ===================
 volumes:
   redis_data:
+  qdrant_data:
 
 # ===================
 # NETWORKS

@@ -38,10 +38,16 @@ services:
     restart: unless-stopped
     networks:
       - voice-ai-network
+  qdrant:
+  image: qdrant/qdrant
+  ports:
+    - "6333:6333"
+  volumes:
+    - qdrant_data:/qdrant/storage
 
 volumes:
   mongodb_data:
-
+  
 networks:
   voice-ai-network:
     driver: bridge

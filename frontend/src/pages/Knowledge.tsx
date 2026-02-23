@@ -111,6 +111,16 @@ export default function Knowledge() {
   };
 
   const handleResync = async (id: string) => {
+    const currentItem = knowledgeItems.find((item) => item.id === id);
+    if (currentItem?.status === "ready") {
+      const shouldResync = window.confirm(
+        "This knowledge document was already ingested successfully. Do you want to re-sync it again?"
+      );
+      if (!shouldResync) {
+        return;
+      }
+    }
+
     setKnowledgeItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, status: "processing" as const } : item

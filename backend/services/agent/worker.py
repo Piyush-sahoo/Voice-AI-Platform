@@ -6,6 +6,7 @@ import logging
 import os
 import json
 import sys
+import asyncio
 import httpx
 from datetime import datetime, timezone
 
@@ -28,9 +29,7 @@ from livekit.agents import function_tool, RunContext
 
 # Import config
 from shared.settings import config
-from shared.ai import embed_texts
-from services.rag.vector_store import BaseVectorStore
-from services.rag.mongo_vector_store import MongoVectorStore
+from shared.retrieval import retrieve_context
 
 
 class OutboundAssistant(Agent):
@@ -55,7 +54,6 @@ class OutboundAssistant(Agent):
         self._custom_tools = tools or []
         self.workspace_id = workspace_id or ""
         self.assistant_id = assistant_id or ""
-        self.vector_store: BaseVectorStore = MongoVectorStore()
         
         super().__init__(
             instructions=custom_instructions or default_instructions
@@ -71,41 +69,28 @@ class OutboundAssistant(Agent):
             return
 
         try:
-            # 1. Embed query
-            query_embedding = await embed_texts([user_text])
-            query_embedding = query_embedding[0]
-
-            # 2. Retrieve top chunks
-            chunks = await self.vector_store.similarity_search(
-                embedding=query_embedding,
-                workspace_id=self.workspace_id,
+            context = await asyncio.to_thread(
+                retrieve_context,
                 assistant_id=self.assistant_id,
-                top_k=3
+                user_id=self.workspace_id,
+                query=user_text,
+                top_k=5,
+                threshold=0.75,
             )
-
-            if not chunks:
-                return
-
-            # 3. Build context injection
-            context_text = "\n\n".join(
-                [f"- {c.get('chunk_text', '')}" for c in chunks if c.get("chunk_text")]
-            )
-
-            if not context_text:
+            if not context:
                 return
 
             turn_ctx.add_message(
-                role="assistant",
-                content=f"""
-Relevant knowledge base information:
-
-{context_text}
-
-Use this information to answer the user accurately.
-"""
+                role="system",
+                content=(
+                    "Use the following knowledge if relevant:\n\n"
+                    f"{context}\n\n"
+                    "User question:\n"
+                    f"{user_text}"
+                ),
             )
         except Exception as e:
-            logger.warning(f"RAG retrieval failed: {e}")
+            logger.warning(f"RAG retrieval failed, proceeding without context: {e}")
     
     @function_tool()
     async def get_current_time(self, context: RunContext) -> str:

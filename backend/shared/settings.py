@@ -33,6 +33,9 @@ class Config:
     # MongoDB
     MONGODB_URI = os.getenv("MONGODB_URI")
     MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "vobiz_calls")
+
+    # Qdrant (local Docker by default)
+    QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
     
     # AWS S3
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
