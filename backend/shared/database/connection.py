@@ -46,8 +46,10 @@ async def connect_to_database(uri: str, db_name: str = "vobiz_calls") -> AsyncIO
 
 
 async def _create_indexes(db: AsyncIOMotorDatabase):
-    """Create necessary indexes for the calls collection."""
+    """Create necessary indexes for core collections."""
     calls = db.calls
+    knowledge_documents = db.knowledge_documents
+    knowledge_chunks = db.knowledge_chunks
     
     # Index for call_id lookups
     await calls.create_index("call_id", unique=True)
@@ -60,6 +62,16 @@ async def _create_indexes(db: AsyncIOMotorDatabase):
     
     # Index for date range queries
     await calls.create_index("created_at")
+
+    # Knowledge document indexes
+    await knowledge_documents.create_index("workspace_id")
+    await knowledge_documents.create_index("created_at")
+
+    # Knowledge chunk indexes
+    await knowledge_chunks.create_index("workspace_id")
+    await knowledge_chunks.create_index("document_id")
+    await knowledge_chunks.create_index("assistant_ids")
+    await knowledge_chunks.create_index([("workspace_id", 1), ("assistant_ids", 1)])
     
     logger.info("Database indexes created")
 

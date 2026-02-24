@@ -51,4 +51,5 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "services.orchestration.tasks_queue.tasks.make_single_call": {"queue": "calls"},
     "services.orchestration.tasks_queue.tasks.execute_campaign": {"queue": "campaigns"},
+    "services.orchestration.tasks_queue.tasks.ingest_knowledge": {"queue": "knowledge"},
 }

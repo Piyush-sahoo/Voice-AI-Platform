@@ -31,6 +31,12 @@ from .tool import (
     UpdateToolRequest,
     ToolResponse,
 )
+from .knowledge import (
+    KnowledgeDocument,
+    KnowledgeChunk,
+    KnowledgeSourceType,
+    KnowledgeStatus,
+)
 
 __all__ = [
     # Call models
@@ -65,4 +71,9 @@ __all__ = [
     "CreateToolRequest",
     "UpdateToolRequest",
     "ToolResponse",
+    # Knowledge models
+    "KnowledgeDocument",
+    "KnowledgeChunk",
+    "KnowledgeSourceType",
+    "KnowledgeStatus",
 ]

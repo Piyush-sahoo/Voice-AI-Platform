@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
-import google.generativeai as genai
+from google import genai
 
 from shared.database.models import CallRecord, CallAnalysis
 from shared.database.connection import get_database

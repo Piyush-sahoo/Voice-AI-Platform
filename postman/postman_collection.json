@@ -10,6 +10,36 @@
             "key": "baseUrl",
             "value": "http://localhost:8000",
             "type": "string"
+        },
+        {
+            "key": "accessToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "refreshToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "assistant_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "campaign_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "call_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "document_id",
+            "value": "",
+            "type": "string"
         }
     ],
     "item": [
@@ -536,6 +566,286 @@
                     "request": {
                         "method": "DELETE",
                         "url": "{{baseUrl}}/api/tools/{{tool_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Knowledge",
+            "description": "Knowledge base upload, listing, resync, and delete",
+            "item": [
+                {
+                    "name": "Create Knowledge (Text)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "name",
+                                    "value": "Pricing FAQ",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "text",
+                                    "value": "Our pricing starts at $29 per month and includes up to 500 minutes.",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "assigned_assistant_ids",
+                                    "value": "{{assistant_id}}",
+                                    "type": "text"
+                                }
+                            ]
+                        },
+                        "url": "{{baseUrl}}/api/knowledge"
+                    }
+                },
+                {
+                    "name": "Create Knowledge (URL)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "name",
+                                    "value": "Website Docs",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "url",
+                                    "value": "https://example.com/docs",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "assigned_assistant_ids",
+                                    "value": "{{assistant_id}}",
+                                    "type": "text"
+                                }
+                            ]
+                        },
+                        "url": "{{baseUrl}}/api/knowledge"
+                    }
+                },
+                {
+                    "name": "Create Knowledge (File)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "name",
+                                    "value": "Uploaded Document",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": ""
+                                },
+                                {
+                                    "key": "assigned_assistant_ids",
+                                    "value": "{{assistant_id}}",
+                                    "type": "text"
+                                }
+                            ]
+                        },
+                        "url": "{{baseUrl}}/api/knowledge"
+                    }
+                },
+                {
+                    "name": "List Knowledge",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/knowledge"
+                    }
+                },
+                {
+                    "name": "Resync Knowledge",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/knowledge/{{document_id}}/resync"
+                    }
+                },
+                {
+                    "name": "Delete Knowledge",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/knowledge/{{document_id}}"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Authentication",
+            "description": "Workspace/user auth and API key management",
+            "item": [
+                {
+                    "name": "Signup",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"StrongPass123!\",\n  \"name\": \"Owner\",\n  \"workspace_name\": \"Demo Workspace\"\n}"
+                        },
+                        "url": "{{baseUrl}}/api/auth/signup"
+                    }
+                },
+                {
+                    "name": "Login",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"StrongPass123!\"\n}"
+                        },
+                        "url": "{{baseUrl}}/api/auth/login"
+                    }
+                },
+                {
+                    "name": "Refresh Token",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+                        },
+                        "url": "{{baseUrl}}/api/auth/refresh"
+                    }
+                },
+                {
+                    "name": "Get My Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/me"
+                    }
+                },
+                {
+                    "name": "Create API Key",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Postman Key\",\n  \"permissions\": [\"*\"]\n}"
+                        },
+                        "url": "{{baseUrl}}/api/auth/api-keys"
+                    }
+                },
+                {
+                    "name": "List API Keys",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/api-keys"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Queue",
+            "description": "Celery queue health and stats",
+            "item": [
+                {
+                    "name": "Queue Health",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/queue/health"
+                    }
+                },
+                {
+                    "name": "Queue Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/queue/stats"
                     }
                 }
             ]

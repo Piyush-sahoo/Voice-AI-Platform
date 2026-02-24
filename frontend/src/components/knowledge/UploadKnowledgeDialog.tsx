@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ChangeEvent, DragEvent, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,20 +14,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Upload, Link, FileText, AlignLeft } from "lucide-react";
-import { mockAgents } from "@/data/mockAgents";
-import { KnowledgeItem } from "@/data/mockKnowledge";
 import { toast } from "sonner";
+import { knowledgeApi } from "@/lib/api";
+
+interface AssistantOption {
+  id: string;
+  name: string;
+}
 
 interface UploadKnowledgeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUpload: (knowledge: Partial<KnowledgeItem>) => void;
+  assistants: AssistantOption[];
+  onUploaded: () => Promise<void>;
 }
 
 export function UploadKnowledgeDialog({
   open,
   onOpenChange,
-  onUpload,
+  assistants,
+  onUploaded,
 }: UploadKnowledgeDialogProps) {
   const [uploadType, setUploadType] = useState<"file" | "url" | "text">("file");
   const [name, setName] = useState("");
@@ -36,8 +42,9 @@ export function UploadKnowledgeDialog({
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
@@ -47,7 +54,7 @@ export function UploadKnowledgeDialog({
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -75,7 +82,7 @@ export function UploadKnowledgeDialog({
     }
   };
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       handleFile(e.target.files[0]);
     }
@@ -89,7 +96,7 @@ export function UploadKnowledgeDialog({
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) {
       toast.error("Please enter a name for the knowledge base");
       return;
@@ -110,32 +117,42 @@ export function UploadKnowledgeDialog({
       return;
     }
 
-    const fileType =
-      uploadType === "file"
-        ? selectedFile?.name.endsWith(".pdf")
-          ? "pdf"
-          : selectedFile?.name.endsWith(".docx")
-          ? "docx"
-          : "txt"
-        : uploadType === "url"
-        ? "url"
-        : "text";
+    try {
+      setIsSubmitting(true);
 
-    onUpload({
-      name: name.trim(),
-      type: fileType,
-      size: selectedFile?.size || text.length || url.length,
-      assignedAgents: selectedAgents,
-      status: "processing",
-    });
+      const formData = new FormData();
+      formData.append("name", name.trim());
 
-    // Reset form
-    setName("");
-    setUrl("");
-    setText("");
-    setSelectedAgents([]);
-    setSelectedFile(null);
-    onOpenChange(false);
+      if (uploadType === "file" && selectedFile) {
+        formData.append("file", selectedFile);
+      } else if (uploadType === "url") {
+        formData.append("url", url.trim());
+      } else {
+        formData.append("text", text.trim());
+      }
+
+      selectedAgents.forEach((assistantId) => {
+        formData.append("assigned_assistant_ids", assistantId);
+      });
+
+      await knowledgeApi.create(formData);
+      await onUploaded();
+
+      toast.success("Knowledge uploaded successfully. Processing...");
+
+      // Reset form
+      setName("");
+      setUrl("");
+      setText("");
+      setSelectedAgents([]);
+      setSelectedFile(null);
+      onOpenChange(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to upload knowledge";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -252,7 +269,7 @@ export function UploadKnowledgeDialog({
             <Label className="text-foreground">Assign to Agents (Optional)</Label>
             <ScrollArea className="h-32 rounded-lg border border-border bg-muted/50 p-3">
               <div className="space-y-2">
-                {mockAgents.map((agent) => (
+                {assistants.map((agent) => (
                   <div
                     key={agent.id}
                     className="flex items-center gap-3 rounded-md p-2 hover:bg-accent"
@@ -279,11 +296,12 @@ export function UploadKnowledgeDialog({
               variant="outline"
               className="flex-1"
               onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
-            <Button className="flex-1" onClick={handleSubmit}>
-              Upload
+            <Button className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? "Uploading..." : "Upload"}
             </Button>
           </div>
         </div>

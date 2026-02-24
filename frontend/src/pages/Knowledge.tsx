@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,82 +28,121 @@ import {
   RefreshCw,
   BookOpen,
   Bot,
+  Loader2,
 } from "lucide-react";
 import { UploadKnowledgeDialog } from "@/components/knowledge/UploadKnowledgeDialog";
 import { KnowledgeDetailSheet } from "@/components/knowledge/KnowledgeDetailSheet";
-import { KnowledgeItem, mockKnowledge, formatFileSize } from "@/data/mockKnowledge";
-import { mockAgents } from "@/data/mockAgents";
+import { formatFileSize, KnowledgeDocumentApi, KnowledgeItem, toKnowledgeItem } from "@/types/knowledge";
 import { toast } from "sonner";
 
+import { assistantsApi, knowledgeApi } from "@/lib/api";
+
+interface AssistantOption {
+  id: string;
+  name: string;
+}
 export default function Knowledge() {
-  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>(mockKnowledge);
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
+  const [assistants, setAssistants] = useState<AssistantOption[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedKnowledge, setSelectedKnowledge] = useState<KnowledgeItem | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
 
+  const assistantNamesById = useMemo(
+    () => assistants.reduce<Record<string, string>>((acc, agent) => {
+      acc[agent.id] = agent.name;
+      return acc;
+    }, {}),
+    [assistants]
+  );
+
+  const fetchKnowledge = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const response = await knowledgeApi.list();
+      const documents = (response.documents as KnowledgeDocumentApi[]).map(toKnowledgeItem);
+      setKnowledgeItems(documents);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load knowledge";
+      setLoadError(message);
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAssistants = async () => {
+    try {
+      const response = await assistantsApi.list();
+      const mapped = (response.assistants || []).map((assistant) => ({
+        id: assistant.assistant_id,
+        name: assistant.name,
+      }));
+      setAssistants(mapped);
+    } catch {
+      setAssistants([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchKnowledge();
+    fetchAssistants();
+  }, []);
+
   const filteredItems = knowledgeItems.filter((item) =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleUpload = (data: Partial<KnowledgeItem>) => {
-    const newItem: KnowledgeItem = {
-      id: `kb-${Date.now()}`,
-      name: data.name || "Untitled",
-      type: data.type || "txt",
-      size: data.size || 0,
-      tokenCount: 0,
-      assignedAgents: data.assignedAgents || [],
-      status: "processing",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setKnowledgeItems((prev) => [newItem, ...prev]);
-    toast.success("Knowledge uploaded successfully. Processing...");
+  const handleDelete = async (id: string) => {
+    try {
+      await knowledgeApi.delete(id);
+      setKnowledgeItems((prev) => prev.filter((item) => item.id !== id));
+      setSelectedKnowledge((prev) => (prev?.id === id ? null : prev));
+      toast.success("Knowledge deleted");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete knowledge";
+      toast.error(message);
+    }
+  };
 
-    // Simulate processing completion
-    setTimeout(() => {
-      setKnowledgeItems((prev) =>
-        prev.map((item) =>
-          item.id === newItem.id
-            ? {
-                ...item,
-                status: "ready" as const,
-                tokenCount: Math.floor(Math.random() * 50000) + 5000,
-                lastSyncedAt: new Date().toISOString(),
-              }
-            : item
-        )
+  const handleResync = async (id: string) => {
+    const currentItem = knowledgeItems.find((item) => item.id === id);
+    if (currentItem?.status === "ready") {
+      const shouldResync = window.confirm(
+        "This knowledge document was already ingested successfully. Do you want to re-sync it again?"
       );
-      toast.success(`${newItem.name} is ready`);
-    }, 3000);
-  };
+      if (!shouldResync) {
+        return;
+      }
+    }
 
-  const handleDelete = (id: string) => {
-    setKnowledgeItems((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const handleResync = (id: string) => {
     setKnowledgeItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, status: "processing" as const } : item
       )
     );
 
-    setTimeout(() => {
-      setKnowledgeItems((prev) =>
-        prev.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                status: "ready" as const,
-                lastSyncedAt: new Date().toISOString(),
-              }
-            : item
-        )
-      );
-      toast.success("Re-sync completed");
-    }, 2000);
+    setSelectedKnowledge((prev) =>
+      prev && prev.id === id ? { ...prev, status: "processing" } : prev
+    );
+
+    try {
+      await knowledgeApi.resync(id);
+      toast.success("Re-sync started");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to re-sync knowledge";
+      toast.error(message);
+      await fetchKnowledge();
+    }
+  };
+
+  const handleUploaded = async () => {
+    await fetchKnowledge();
   };
 
   const getTypeIcon = (type: KnowledgeItem["type"]) => {
@@ -130,7 +169,7 @@ export default function Knowledge() {
 
   const getAgentNames = (agentIds: string[]) => {
     return agentIds
-      .map((id) => mockAgents.find((a) => a.id === id)?.name)
+      .map((id) => assistantNamesById[id])
       .filter(Boolean)
       .slice(0, 2);
   };
@@ -178,7 +217,28 @@ export default function Knowledge() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredItems.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-32 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      <p className="text-muted-foreground">Loading knowledge...</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : loadError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-32 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <BookOpen className="h-8 w-8 text-muted-foreground" />
+                      <p className="text-muted-foreground">{loadError}</p>
+                      <Button variant="outline" size="sm" onClick={fetchKnowledge}>
+                        Retry
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredItems.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2">
@@ -276,7 +336,6 @@ export default function Knowledge() {
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDelete(item.id);
-                              toast.success("Knowledge deleted");
                             }}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
@@ -296,7 +355,8 @@ export default function Knowledge() {
       <UploadKnowledgeDialog
         open={uploadDialogOpen}
         onOpenChange={setUploadDialogOpen}
-        onUpload={handleUpload}
+        assistants={assistants}
+        onUploaded={handleUploaded}
       />
 
       <KnowledgeDetailSheet
@@ -305,6 +365,7 @@ export default function Knowledge() {
         knowledge={selectedKnowledge}
         onDelete={handleDelete}
         onResync={handleResync}
+        assistantNamesById={assistantNamesById}
       />
     </DashboardLayout>
   );

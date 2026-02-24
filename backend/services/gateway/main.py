@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
     
     # Register routers
-    from gateway.routers import calls, health, assistants, phone_numbers, sip_configs, campaigns, tools, job_queue, auth
+    from gateway.routers import calls, health, assistants, phone_numbers, sip_configs, campaigns, tools, job_queue, auth, knowledge
     from shared.auth.dependencies import get_current_user
     
     # Public routes (no auth required)
@@ -84,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(sip_configs.router, prefix="/api", tags=["SIP Configs"], dependencies=[Depends(get_current_user)])
     app.include_router(campaigns.router, prefix="/api", tags=["Campaigns"], dependencies=[Depends(get_current_user)])
     app.include_router(tools.router, prefix="/api", tags=["Tools"], dependencies=[Depends(get_current_user)])
+    app.include_router(knowledge.router, prefix="/api", tags=["Knowledge"], dependencies=[Depends(get_current_user)])
     app.include_router(calls.router, prefix="/api", tags=["Calls"], dependencies=[Depends(get_current_user)])
     app.include_router(job_queue.router, prefix="/api", tags=["Queue"], dependencies=[Depends(get_current_user)])
     

@@ -6,6 +6,7 @@ import logging
 import os
 import json
 import sys
+import asyncio
 import httpx
 from datetime import datetime, timezone
 
@@ -15,10 +16,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dotenv import load_dotenv
 from livekit import agents, api
 from livekit.agents import AgentSession, Agent, RoomInputOptions, metrics, MetricsCollectedEvent
-from livekit.plugins import openai, noise_cancellation
+from livekit.plugins import openai
 
 # Load environment variables
-load_dotenv(".env.local")
+load_dotenv(".env")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,12 +29,19 @@ from livekit.agents import function_tool, RunContext
 
 # Import config
 from shared.settings import config
+from shared.retrieval import retrieve_context
 
 
 class OutboundAssistant(Agent):
     """AI agent for outbound calls with dynamic tools."""
     
-    def __init__(self, custom_instructions: str = None, tools: list = None) -> None:
+    def __init__(
+        self,
+        custom_instructions: str = None,
+        tools: list = None,
+        workspace_id: str = "",
+        assistant_id: str = "",
+    ) -> None:
         default_instructions = """
         You are a helpful and professional voice assistant calling from Vobiz.
         
@@ -44,10 +52,45 @@ class OutboundAssistant(Agent):
         """
         
         self._custom_tools = tools or []
+        self.workspace_id = workspace_id or ""
+        self.assistant_id = assistant_id or ""
         
         super().__init__(
             instructions=custom_instructions or default_instructions
         )
+
+    async def on_user_turn_completed(self, turn_ctx, new_message):
+        user_text = new_message.text_content()
+        if not user_text:
+            return
+
+        if not self.workspace_id or not self.assistant_id:
+            logger.debug("Skipping RAG retrieval: missing workspace_id or assistant_id")
+            return
+
+        try:
+            context = await asyncio.to_thread(
+                retrieve_context,
+                assistant_id=self.assistant_id,
+                user_id=self.workspace_id,
+                query=user_text,
+                top_k=5,
+                threshold=0.75,
+            )
+            if not context:
+                return
+
+            turn_ctx.add_message(
+                role="system",
+                content=(
+                    "Use the following knowledge if relevant:\n\n"
+                    f"{context}\n\n"
+                    "User question:\n"
+                    f"{user_text}"
+                ),
+            )
+        except Exception as e:
+            logger.warning(f"RAG retrieval failed, proceeding without context: {e}")
     
     @function_tool()
     async def get_current_time(self, context: RunContext) -> str:
@@ -225,6 +268,7 @@ async def get_inbound_assistant_config(room_name: str) -> dict:
             "system_prompt": assistant_doc.get("system_prompt", ""),
             "first_message": assistant_doc.get("first_message", ""),
             "inbound_number": inbound_number,
+            "workspace_id": assistant_doc.get("workspace_id") or phone_doc.get("workspace_id", ""),
         }
         
         # Also check voice_config for any custom settings
@@ -251,6 +295,7 @@ async def entrypoint(ctx: agents.JobContext):
     phone_number = None
     call_id = None
     assistant_id = None
+    workspace_id = None
     sip_trunk_id = config.OUTBOUND_TRUNK_ID
     custom_instructions = None
     first_message = None
@@ -259,7 +304,6 @@ async def entrypoint(ctx: agents.JobContext):
     
     # Voice configuration (user-selectable models)
     voice_config = {
-        "mode": "realtime",  # realtime or pipeline
         "voice_id": config.OPENAI_REALTIME_VOICE,
         "temperature": 0.8,
         # Realtime mode
@@ -281,6 +325,7 @@ async def entrypoint(ctx: agents.JobContext):
             phone_number = data.get("phone_number")
             call_id = data.get("call_id")
             assistant_id = data.get("assistant_id")
+            workspace_id = data.get("workspace_id")
             sip_trunk_id = data.get("sip_trunk_id", config.OUTBOUND_TRUNK_ID)
             custom_instructions = data.get("instructions")
             first_message = data.get("first_message")
@@ -321,13 +366,35 @@ async def entrypoint(ctx: agents.JobContext):
     else:
         logger.info(f"[OUTBOUND CALL] To: {phone_number} (Room: {ctx.room.name})")
 
-    # Create session based on mode
-    mode = voice_config.get("mode", "realtime")
-    logger.info(f"Creating agent session: mode={mode}")
-    
+    # Ensure shared DB connection is available for RAG retrieval
+    if config.MONGODB_URI:
+        try:
+            from shared.database.connection import connect_to_database
+            await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
+        except Exception as e:
+            logger.warning(f"MongoDB connect for RAG failed: {e}")
+
+    # Create session based on voice mode from assistant configuration
+    assistant_config = {"voice": voice_config}
+    voice_config = assistant_config.get("voice", {})
+    mode = voice_config.get("mode")
+
+    if mode == "realtime":
+        provider = voice_config.get("realtime_provider")
+        model = voice_config.get("realtime_model")
+
+    elif mode == "pipeline":
+        provider = voice_config.get("llm_provider")
+        model = voice_config.get("llm_model")
+
+    else:
+        raise ValueError(f"Invalid voice mode: {mode}")
+
+    logger.info(f"Selected voice mode={mode}, provider={provider}, model={model}")
+
     if mode == "pipeline":
         # Pipeline mode: STT → LLM → TTS (more flexible)
-        logger.info(f"Pipeline: STT={voice_config.get('stt_provider')}, LLM={voice_config.get('llm_provider')}, TTS={voice_config.get('tts_provider')}")
+        logger.info(f"Pipeline: STT={voice_config.get('stt_provider')}, LLM={provider}/{model}, TTS={voice_config.get('tts_provider')}")
         session = AgentSession(
             stt=get_stt(voice_config),
             llm=get_llm(voice_config),
@@ -335,7 +402,7 @@ async def entrypoint(ctx: agents.JobContext):
         )
     else:
         # Realtime mode: Speech-to-Speech (lowest latency)
-        logger.info(f"Realtime: provider={voice_config.get('realtime_provider')}, voice={voice_config.get('voice_id')}")
+        logger.info(f"Realtime: provider/model={provider}/{model}, voice={voice_config.get('voice_id')}")
         session = AgentSession(
             llm=get_realtime_model(voice_config),
         )
@@ -456,12 +523,18 @@ async def entrypoint(ctx: agents.JobContext):
 
     ctx.add_shutdown_callback(on_shutdown)
 
+    agent_instance = OutboundAssistant(
+        custom_instructions,
+        workspace_id=workspace_id,
+        assistant_id=assistant_id,
+    )
+
     # Start session
     await session.start(
         room=ctx.room,
-        agent=OutboundAssistant(custom_instructions),
+        agent=agent_instance,
         room_input_options=RoomInputOptions(
-            noise_cancellation=noise_cancellation.BVCTelephony(),
+            # noise_cancellation=noise_cancellation.BVCTelephony(),
             close_on_disconnect=False,  # Keep session alive for proper cleanup
         ),
     )
@@ -479,6 +552,12 @@ async def entrypoint(ctx: agents.JobContext):
             inbound_system_prompt = inbound_config.get("system_prompt", "")
             inbound_first_message = inbound_config.get("first_message", "")
             inbound_assistant_id = inbound_config.get("assistant_id", "")
+            inbound_workspace_id = inbound_config.get("workspace_id", "")
+
+            if inbound_workspace_id:
+                agent_instance.workspace_id = inbound_workspace_id
+            if inbound_assistant_id:
+                agent_instance.assistant_id = inbound_assistant_id
             
             # Use custom instructions if set in metadata, else use assistant's system prompt
             effective_instructions = custom_instructions or inbound_system_prompt or """

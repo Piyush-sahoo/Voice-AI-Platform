@@ -6,6 +6,8 @@ livekit-plugins-deepgram
 livekit-plugins-google
 
 python-dotenv>=1.0.0
+livekit-plugins-deepgram
+livekit-plugins-google
 
 
 # REST API
@@ -26,9 +28,23 @@ celery[redis]>=5.3.0
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 
-# AI Analysis
+# AI Analysis & Embeddings
 google-generativeai>=0.3.0
 boto3>=1.34.0
 
+sentence-transformers>=2.2.2
+qdrant-client>=1.7.0
+openai>=1.40.0
+tiktoken>=0.7.0
+PyPDF2>=3.0.0
+python-docx>=1.1.0
+
+# RAG Knowledge Pipeline
+tiktoken>=0.6.0
+PyPDF2>=3.0.0
+python-docx>=1.1.0
+python-multipart>=0.0.9
+sentence-transformers>=3.0.0
+qdrant-client>=1.10.0
 
 
