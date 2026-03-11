@@ -14,6 +14,7 @@ import {
   LogOut,
   Users,
   FileText,
+  Sparkles,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ const navigation = [
 ];
 
 const bottomNavigation = [
+  { name: "Onboarding", href: "/onboarding", icon: Sparkles },
   { name: "Documentation", href: "http://localhost:3001/Voice-AI-Platform/", icon: FileText },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

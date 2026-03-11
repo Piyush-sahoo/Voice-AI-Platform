@@ -192,8 +192,11 @@ class CampaignService:
                             metadata={"campaign_id": campaign_id, "contact_name": contact.name},
                         )
                         
-                        # Make the call
-                        call = await CallService.create_call(call_request)
+                        # Make the call in the same workspace as the campaign
+                        call = await CallService.create_call(
+                            call_request,
+                            workspace_id=campaign.workspace_id,
+                        )
                         
                         # Update contact status
                         await db.campaigns.update_one(

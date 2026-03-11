@@ -71,7 +71,21 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
     
     # Register routers
-    from gateway.routers import calls, health, assistants, phone_numbers, sip_configs, campaigns, tools, job_queue, auth, knowledge, calendar
+    from gateway.routers import (
+        calls,
+        health,
+        assistants,
+        phone_numbers,
+        sip_configs,
+        campaigns,
+        tools,
+        job_queue,
+        auth,
+        knowledge,
+        workspace_integrations,
+        calendar,
+    )
+
     from gateway.api import inbound_calls
     from shared.auth.dependencies import get_current_user
     
@@ -90,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router, prefix="/api", tags=["Knowledge"], dependencies=[Depends(get_current_user)])
     app.include_router(calls.router, prefix="/api", tags=["Calls"], dependencies=[Depends(get_current_user)])
     app.include_router(job_queue.router, prefix="/api", tags=["Queue"], dependencies=[Depends(get_current_user)])
+    app.include_router(workspace_integrations.router, prefix="/api", tags=["Workspace Integrations"], dependencies=[Depends(get_current_user)])
     
     return app
 

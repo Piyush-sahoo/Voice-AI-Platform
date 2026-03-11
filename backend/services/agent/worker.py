@@ -9,6 +9,7 @@ import sys
 import asyncio
 import httpx
 from datetime import datetime, timezone
+from typing import Optional
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -74,6 +75,7 @@ class OutboundAssistant(Agent):
         if not query:
             return
 
+        logger.info("[VOICE] User turn completed, generating reply")
         rag_logger.info("USER QUERY: %s", query)
 
         if not self.assistant_id:
@@ -230,6 +232,77 @@ async def update_call_in_db(call_id: str, updates: dict):
         logger.error(f"Failed to update call in DB: {e}")
 
 
+async def ensure_inbound_call_record(
+    call_id: str,
+    workspace_id: str,
+    assistant_id: Optional[str] = None,
+    to_number: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    instructions: Optional[str] = None,
+    webhook_url: Optional[str] = None,
+) -> None:
+    """
+    Ensure there is a CallRecord for a LiveKit-driven inbound call.
+
+    Uses the LiveKit room name as both call_id and room_name so that
+    analytics, webhooks, and the rest of the pipeline behave like the
+    outbound CallService-based flow.
+    """
+    try:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        from shared.database.models import CallRecord, CallStatus
+        from shared.cache import SessionCache
+
+        if not config.MONGODB_URI:
+            return
+        if not workspace_id:
+            # Without workspace_id we can't safely attribute the call to a tenant.
+            logger.warning(
+                "[INBOUND] Skipping CallRecord creation because workspace_id is missing "
+                "(call_id=%s, assistant_id=%s)",
+                call_id,
+                assistant_id,
+            )
+            return
+
+        client = AsyncIOMotorClient(config.MONGODB_URI)
+        db = client[config.MONGODB_DB_NAME]
+
+        existing = await db.calls.find_one({"call_id": call_id})
+        if existing:
+            client.close()
+            return
+
+        call = CallRecord(
+            call_id=call_id,
+            workspace_id=workspace_id,
+            # For LiveKit SIP inbound we often only know the dialed number (our DID).
+            phone_number=to_number,
+            from_number=to_number,
+            room_name=call_id,
+            status=CallStatus.INITIATED,
+            assistant_id=assistant_id,
+            sip_id=None,
+            instructions=instructions,
+            webhook_url=webhook_url,
+            metadata=metadata or {},
+            created_at=datetime.now(timezone.utc),
+        )
+
+        await db.calls.insert_one(call.to_dict())
+        await SessionCache.invalidate_calls(workspace_id)
+        client.close()
+        logger.info(
+            "[INBOUND] CallRecord created for LiveKit room "
+            "(call_id=%s, workspace_id=%s, assistant_id=%s)",
+            call_id,
+            workspace_id,
+            assistant_id,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create inbound call in DB: {e}")
+
+
 async def run_post_call_analysis(call_id: str):
     """Run post-call analysis using Gemini."""
     try:
@@ -279,6 +352,7 @@ async def entrypoint(ctx: agents.JobContext):
     
     # Import model factory
     from services.agent.model_factory import get_stt, get_llm, get_tts, get_realtime_model
+    from services.config.workspace_integrations_service import WorkspaceIntegrationService
     
     # Parse metadata
     phone_number = None
@@ -324,6 +398,8 @@ async def entrypoint(ctx: agents.JobContext):
             temperature = data.get("temperature", 0.8)
             is_inbound = bool(data.get("is_inbound", False))
             mode = data.get("voice_mode")
+            # For inbound SIP from LiveKit dispatch rules we may receive the DID here.
+            did_to_number = data.get("to_number")
             
             # Update voice_config from metadata (user-selected settings)
             if "voice_config" in data:
@@ -340,17 +416,23 @@ async def entrypoint(ctx: agents.JobContext):
             
     except Exception:
         logger.warning("No valid JSON metadata found.")
+    # Use room name as call_id if not provided
+    if not call_id:
+        call_id = ctx.room.name
 
     mode = voice_config.get("mode") or mode or "pipeline"
     logger.info(f"Agent metadata: assistant_id={assistant_id}, workspace_id={workspace_id}, mode={mode}")
 
-    # Use room name as call_id if not provided
-    if not call_id:
-        call_id = ctx.room.name
-    
+    # Ensure shared DB connection is available before loading workspace integrations / RAG
+    if config.MONGODB_URI:
+        try:
+            from shared.database.connection import connect_to_database
+            await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
+        except Exception as e:
+            logger.warning(f"MongoDB connect for workspace integrations/RAG failed: {e}")
+
     # Detect inbound vs outbound call
-    # Inbound: room name starts with "inbound-"
-    # Outbound: has phone_number in metadata
+    # Inbound: explicit flag, or room name starts with "inbound-", or no phone_number
     if is_inbound:
         is_inbound = True
     elif ctx.room.name.startswith("inbound-"):
@@ -360,19 +442,235 @@ async def entrypoint(ctx: agents.JobContext):
     else:
         # Fallback for other room names (e.g. "call-") without phone number -> Inbound
         is_inbound = True
-    
+
     if is_inbound:
         logger.info(f"[INBOUND CALL] Room: {ctx.room.name}")
     else:
         logger.info(f"[OUTBOUND CALL] To: {phone_number} (Room: {ctx.room.name})")
 
-    # Ensure shared DB connection is available for RAG retrieval
-    if config.MONGODB_URI:
+    # For LiveKit SIP inbound dispatched directly (no metadata), resolve assistant/workspace at runtime.
+    if is_inbound and not assistant_id:
+        logger.info("[INBOUND] No assistant/workspace in metadata; attempting runtime resolution")
+
+        # Try to infer the dialed number (our DID) from metadata first, then participants / room name.
+        inferred_to_number: Optional[str] = locals().get("did_to_number")
         try:
-            from shared.database.connection import connect_to_database
-            await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
+            # Wait briefly for the SIP participant to join so we can inspect its identity.
+            try:
+                await ctx.wait_for_participant(timeout=5.0)
+            except Exception:
+                # Non-fatal; we'll still attempt to infer from current participants / room name.
+                logger.info("[INBOUND] wait_for_participant timed out; inspecting existing participants")
+
+            participants = []
+            # Newer LiveKit SDKs expose remote participants via a dict.
+            remote_participants = getattr(ctx.room, "remote_participants", None)
+            if isinstance(remote_participants, dict):
+                participants.extend(list(remote_participants.values()))
+            # Fallback for any older/alternative attribute names.
+            fallback_participants = getattr(ctx.room, "participants", None)
+            if fallback_participants and isinstance(fallback_participants, list):
+                participants.extend(fallback_participants)
+
+            logger.info(
+                "[INBOUND] Inspecting %d room participants for SIP identity",
+                len(participants),
+            )
+
+            for participant in participants:
+                identity = getattr(participant, "identity", "") or ""
+                logger.info("[INBOUND] Participant identity: %s", identity)
+                # Common SIP identity format: "sip:+15551234567@sip.livekit.cloud"
+                if "sip:" in identity:
+                    try:
+                        sip_part = identity.split("sip:", 1)[1]
+                        number_part = sip_part.split("@", 1)[0]
+                        inferred_to_number = number_part.strip()
+                        break
+                    except Exception:
+                        continue
+
+            # As a fallback, attempt to parse the room name for a phone-like token.
+            if not inferred_to_number and ctx.room.name.startswith("call-"):
+                # Typical pattern: "call-<number>_<random>" or "call-_<number>_<random>"
+                parts = ctx.room.name.split("_")
+                if len(parts) >= 2:
+                    candidate = parts[1].strip()
+                    if candidate:
+                        inferred_to_number = candidate
+
         except Exception as e:
-            logger.warning(f"MongoDB connect for RAG failed: {e}")
+            logger.warning(f"[INBOUND] Failed to inspect participants for SIP identity: {e}")
+
+        if inferred_to_number:
+            logger.info("[INBOUND] Inferred dialed number (DID) from SIP identity: %s", inferred_to_number)
+            try:
+                from services.config.phone_sip_service import PhoneNumberService
+                from services.config.assistant_service import AssistantService
+
+                # Try several normalized variants of the inferred number to match stored phone_numbers.
+                candidate_numbers = []
+                base = inferred_to_number
+                if base:
+                    candidate_numbers.append(base)
+                    if not base.startswith("+"):
+                        candidate_numbers.append("+" + base)
+                    stripped = base.lstrip("0")
+                    if stripped and stripped != base:
+                        candidate_numbers.append(stripped)
+                        if not stripped.startswith("+"):
+                            candidate_numbers.append("+" + stripped)
+
+                assistant_cfg = None
+                for candidate in candidate_numbers:
+                    logger.info("[INBOUND] Trying assistant mapping for DID candidate: %s", candidate)
+                    assistant_cfg = await PhoneNumberService.get_assistant_by_number(candidate)
+                    if assistant_cfg:
+                        inferred_to_number = candidate
+                        break
+
+                if not assistant_cfg:
+                    logger.warning(
+                        "[INBOUND] No assistant mapping found for DID %s; "
+                        "continuing without tenant-specific config",
+                        inferred_to_number,
+                    )
+                else:
+                    # Extract assistant + workspace + voice settings
+                    assistant_id = assistant_cfg.get("assistant_id")
+                    workspace_id = assistant_cfg.get("workspace_id") or workspace_id
+                    custom_instructions = (
+                        assistant_cfg.get("instructions") or custom_instructions
+                    )
+                    first_message = assistant_cfg.get("first_message") or first_message
+                    temperature = assistant_cfg.get("temperature") or temperature
+
+                    voice = assistant_cfg.get("voice") or {}
+                    voice_mode = assistant_cfg.get("voice_mode")
+                    voice_provider = assistant_cfg.get("voice_provider")
+                    voice_model = assistant_cfg.get("voice_model")
+
+                    # Merge voice settings into existing voice_config
+                    try:
+                        voice_config.update(voice)
+                    except Exception:
+                        pass
+                    if voice_mode and "mode" not in voice_config:
+                        voice_config["mode"] = voice_mode
+
+                    logger.info(
+                        "[INBOUND] Resolved assistant from DID mapping "
+                        "(assistant_id=%s, workspace_id=%s, voice_mode=%s)",
+                        assistant_id,
+                        workspace_id,
+                        voice_mode,
+                    )
+
+                    # Optionally load richer assistant config (e.g. webhook_url)
+                    webhook_url_from_assistant = None
+                    try:
+                        if assistant_id:
+                            detailed = await AssistantService.get_assistant_for_call(assistant_id)
+                            if detailed:
+                                webhook_url_from_assistant = detailed.get("webhook_url")
+                    except Exception as e:
+                        logger.warning(
+                            "[INBOUND] Failed to load detailed assistant config for %s: %s",
+                            assistant_id,
+                            e,
+                        )
+
+                    if webhook_url_from_assistant:
+                        webhook_url = webhook_url or webhook_url_from_assistant
+
+                    # Build metadata similar to /inbound-call
+                    inbound_metadata = {
+                        "is_inbound": True,
+                        "direction": "inbound",
+                        "phone_number": None,
+                        "from_number": None,
+                        "to_number": assistant_cfg.get("to_number") or inferred_to_number,
+                        "sip_trunk_id": assistant_cfg.get("inbound_trunk_id"),
+                        "assistant_id": assistant_id,
+                        "workspace_id": workspace_id,
+                        "instructions": custom_instructions,
+                        "first_message": first_message,
+                        "temperature": temperature,
+                        "voice": voice,
+                        "voice_mode": voice_mode,
+                        "voice_provider": voice_provider,
+                        "voice_model": voice_model,
+                    }
+
+                    # Ensure we have a CallRecord that matches this LiveKit room.
+                    await ensure_inbound_call_record(
+                        call_id=call_id,
+                        workspace_id=workspace_id,
+                        assistant_id=assistant_id,
+                        to_number=inbound_metadata["to_number"],
+                        metadata=inbound_metadata,
+                        instructions=custom_instructions,
+                        webhook_url=webhook_url,
+                    )
+
+            except Exception as e:
+                logger.error(f"[INBOUND] Runtime assistant resolution failed: {e}")
+        else:
+            logger.warning(
+                "[INBOUND] Could not infer dialed number from SIP participants; "
+                "continuing without tenant-specific config",
+            )
+
+    # Load per-workspace integrations (with env-variable fallback for backward compatibility)
+    from shared.logging_utils import log_resolution
+
+    api_keys = {}
+    workspace_keys_exist = False
+    if workspace_id:
+        try:
+            integrations = await WorkspaceIntegrationService.get_workspace_integrations(
+                workspace_id, decrypt=True
+            )
+            workspace_keys_exist = bool(integrations and integrations.get("ai_providers"))
+        except Exception as e:
+            integrations = None
+            logger.warning("Failed to load workspace integrations: %s", e)
+
+        if integrations:
+            ai_cfg = integrations.get("ai_providers") or {}
+            api_keys = {
+                "openai": ai_cfg.get("openai_key") or config.OPENAI_API_KEY,
+                "deepgram": ai_cfg.get("deepgram_key") or config.DEEPGRAM_API_KEY,
+                "google": ai_cfg.get("google_key") or config.GOOGLE_API_KEY,
+                "elevenlabs": ai_cfg.get("elevenlabs_key") or config.ELEVENLABS_API_KEY,
+                "cartesia": ai_cfg.get("cartesia_key") or config.CARTESIA_API_KEY,
+                "anthropic": ai_cfg.get("anthropic_key") or config.ANTHROPIC_API_KEY,
+                "assemblyai": ai_cfg.get("assemblyai_key") or config.ASSEMBLYAI_API_KEY,
+            }
+        else:
+            api_keys = {
+                "openai": config.OPENAI_API_KEY,
+                "deepgram": config.DEEPGRAM_API_KEY,
+                "google": config.GOOGLE_API_KEY,
+                "elevenlabs": config.ELEVENLABS_API_KEY,
+                "cartesia": config.CARTESIA_API_KEY,
+                "anthropic": config.ANTHROPIC_API_KEY,
+                "assemblyai": config.ASSEMBLYAI_API_KEY,
+            }
+    else:
+        api_keys = {
+            "openai": config.OPENAI_API_KEY,
+            "deepgram": config.DEEPGRAM_API_KEY,
+            "google": config.GOOGLE_API_KEY,
+            "elevenlabs": config.ELEVENLABS_API_KEY,
+            "cartesia": config.CARTESIA_API_KEY,
+            "anthropic": config.ANTHROPIC_API_KEY,
+            "assemblyai": config.ASSEMBLYAI_API_KEY,
+        }
+
+    providers = [k for k, v in api_keys.items() if v]
+    source = "workspace_integrations" if workspace_keys_exist else "platform-env"
+    log_resolution("AI providers", workspace_id, source, providers)
 
     # Create session based on voice mode from assistant configuration
     assistant_config = {"voice": voice_config}
@@ -397,15 +695,15 @@ async def entrypoint(ctx: agents.JobContext):
         # Pipeline mode: STT → LLM → TTS (more flexible)
         logger.info(f"Pipeline: STT={voice_config.get('stt_provider')}, LLM={provider}/{model}, TTS={voice_config.get('tts_provider')}")
         session = AgentSession(
-            stt=get_stt(voice_config),
-            llm=get_llm(voice_config),
-            tts=get_tts(voice_config),
+            stt=get_stt(voice_config, api_keys=api_keys),
+            llm=get_llm(voice_config, api_keys=api_keys),
+            tts=get_tts(voice_config, api_keys=api_keys),
         )
     else:
         # Realtime mode: Speech-to-Speech (lowest latency)
         logger.info(f"Realtime: provider/model={provider}/{model}, voice={voice_config.get('voice_id')}")
         session = AgentSession(
-            llm=get_realtime_model(voice_config),
+            llm=get_realtime_model(voice_config, api_keys=api_keys),
         )
 
     if assistant_id:

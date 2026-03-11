@@ -20,9 +20,6 @@ router = APIRouter()
 
 class CreateSipConfigRequest(BaseModel):
     name: str
-    sip_domain: str
-    sip_username: str
-    sip_password: str
     from_number: str
     trunk_id: Optional[str] = None
     description: Optional[str] = None
@@ -31,9 +28,6 @@ class CreateSipConfigRequest(BaseModel):
 
 class UpdateSipConfigRequest(BaseModel):
     name: Optional[str] = None
-    sip_domain: Optional[str] = None
-    sip_username: Optional[str] = None
-    sip_password: Optional[str] = None
     from_number: Optional[str] = None
     description: Optional[str] = None
     is_default: Optional[bool] = None

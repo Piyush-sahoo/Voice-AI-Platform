@@ -153,3 +153,65 @@ export const apiKeysApi = {
     create: (name: string) => api.post<unknown>("/api/auth/api-keys", { name }),
     delete: (id: string) => api.delete<unknown>(`/api/auth/api-keys/${id}`),
 };
+
+// Workspace integrations
+export interface LiveKitIntegrationsResponse {
+    url?: string | null;
+    api_key?: string | null;
+    api_secret?: string | null;
+}
+
+export interface AIProvidersIntegrationsResponse {
+    openai_key?: string | null;
+    deepgram_key?: string | null;
+    google_key?: string | null;
+    elevenlabs_key?: string | null;
+    cartesia_key?: string | null;
+    anthropic_key?: string | null;
+    assemblyai_key?: string | null;
+}
+
+export interface TelephonyIntegrationsResponse {
+    sip_domain?: string | null;
+    sip_username?: string | null;
+    sip_password?: string | null;
+    outbound_number?: string | null;
+}
+
+export interface WorkspaceIntegrationsResponse {
+    livekit?: LiveKitIntegrationsResponse | null;
+    ai_providers?: AIProvidersIntegrationsResponse | null;
+    telephony?: TelephonyIntegrationsResponse | null;
+}
+
+export interface WorkspaceIntegrationsPayload {
+    livekit?: {
+        url?: string;
+        api_key?: string;
+        api_secret?: string;
+    };
+    ai_providers?: {
+        openai_key?: string;
+        deepgram_key?: string;
+        google_key?: string;
+        elevenlabs_key?: string;
+        cartesia_key?: string;
+        anthropic_key?: string;
+        assemblyai_key?: string;
+    };
+    telephony?: {
+        sip_domain?: string;
+        sip_username?: string;
+        sip_password?: string;
+        outbound_number?: string;
+    };
+}
+
+export const workspaceIntegrationsApi = {
+    get: () => api.get<WorkspaceIntegrationsResponse>("/api/workspace/integrations"),
+    create: (data: WorkspaceIntegrationsPayload) =>
+        api.post<WorkspaceIntegrationsResponse>("/api/workspace/integrations", data),
+    update: (data: WorkspaceIntegrationsPayload) =>
+        api.patch<WorkspaceIntegrationsResponse>("/api/workspace/integrations", data),
+    delete: () => api.delete<{ message: string }>("/api/workspace/integrations"),
+};

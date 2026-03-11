@@ -15,7 +15,7 @@ from pathlib import Path
 # Add parent dir for shared imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.routers import assistants, phone_numbers, sip_configs
+from config.routers import assistants, phone_numbers, sip_configs, workspace_integrations
 from config.cache.redis_cache import RedisCache
 from services.config.assistant_service import AssistantService
 from shared.database.connection import connect_to_database, close_database_connection
@@ -75,6 +75,7 @@ app.add_middleware(
 app.include_router(assistants.router, prefix="/assistants", tags=["Assistants"])
 app.include_router(phone_numbers.router, prefix="/phone-numbers", tags=["Phone Numbers"])
 app.include_router(sip_configs.router, prefix="/sip-configs", tags=["SIP Configs"])
+app.include_router(workspace_integrations.router, tags=["Workspace Integrations"])
 
 
 @app.get("/health")

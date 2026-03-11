@@ -327,9 +327,12 @@ def make_single_call(self, call_data: Dict[str, Any]) -> Dict[str, Any]:
             metadata={"campaign_id": campaign_id, "contact_index": contact_index}
         )
         
-        # Create call (async)
+        # Create call (async) in the same workspace as the campaign
         async def create_call():
-            return await CallService.create_call(request)
+            return await CallService.create_call(
+                request,
+                workspace_id=call_data.get("workspace_id"),
+            )
         
         call = run_async(create_call())
         
@@ -411,6 +414,7 @@ def execute_campaign(self, campaign_id: str) -> Dict[str, Any]:
                     "assistant_id": campaign.assistant_id,
                     "campaign_id": campaign_id,
                     "contact_index": contact_index,
+                    "workspace_id": campaign.workspace_id,
                 }
                 tasks.append(make_single_call.s(call_data))
             

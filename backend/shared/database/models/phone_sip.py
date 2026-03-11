@@ -52,10 +52,10 @@ class SipConfig(BaseModel):
     workspace_id: Optional[str] = None  # For multi-tenancy
     name: str  # e.g., "Vobiz Production"
     
-    # SIP Credentials (for dynamic trunk creation)
-    sip_domain: str  # e.g., "867a351f.sip.vobiz.ai"
-    sip_username: str
-    sip_password: str
+    # SIP Credentials (for dynamic trunk creation - now sourced from workspace_integrations)
+    sip_domain: Optional[str] = None  # e.g., "867a351f.sip.vobiz.ai"
+    sip_username: Optional[str] = None
+    sip_password: Optional[str] = None
     from_number: str  # Caller ID number
     
     # LiveKit trunk ID (created dynamically or provided)
@@ -104,9 +104,6 @@ class CreateInboundNumberRequest(BaseModel):
 class CreateSipConfigRequest(BaseModel):
     """Request to create a SIP configuration."""
     name: str
-    sip_domain: str  # Required: e.g., "867a351f.sip.vobiz.ai"
-    sip_username: str  # Required
-    sip_password: str  # Required
     from_number: str  # Required: Caller ID number e.g., "+912271264280"
     trunk_id: Optional[str] = None  # Optional: if not provided, will create one
     description: Optional[str] = None

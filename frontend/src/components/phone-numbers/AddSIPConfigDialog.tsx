@@ -9,15 +9,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Phone, Server } from "lucide-react";
 import { toast } from "sonner";
 
 interface SIPConfig {
   name: string;
-  sipTerminalUri: string;
-  username: string;
-  password: string;
-  phoneNumber: string;
+  from_number: string;
+  is_default: boolean;
 }
 
 interface AddSIPConfigDialogProps {
@@ -33,10 +32,8 @@ export function AddSIPConfigDialog({
 }: AddSIPConfigDialogProps) {
   const [formData, setFormData] = useState<SIPConfig>({
     name: "",
-    sipTerminalUri: "",
-    username: "",
-    password: "",
-    phoneNumber: "",
+    from_number: "",
+    is_default: false,
   });
 
   const handleSubmit = () => {
@@ -44,19 +41,7 @@ export function AddSIPConfigDialog({
       toast.error("Please enter a configuration name");
       return;
     }
-    if (!formData.sipTerminalUri.trim()) {
-      toast.error("Please enter a SIP Terminal URI");
-      return;
-    }
-    if (!formData.username.trim()) {
-      toast.error("Please enter a username");
-      return;
-    }
-    if (!formData.password.trim()) {
-      toast.error("Please enter a password");
-      return;
-    }
-    if (!formData.phoneNumber.trim()) {
+    if (!formData.from_number.trim()) {
       toast.error("Please enter a phone number");
       return;
     }
@@ -66,10 +51,8 @@ export function AddSIPConfigDialog({
     // Reset form
     setFormData({
       name: "",
-      sipTerminalUri: "",
-      username: "",
-      password: "",
-      phoneNumber: "",
+      from_number: "",
+      is_default: false,
     });
     onOpenChange(false);
   };
@@ -77,10 +60,8 @@ export function AddSIPConfigDialog({
   const handleClose = () => {
     setFormData({
       name: "",
-      sipTerminalUri: "",
-      username: "",
-      password: "",
-      phoneNumber: "",
+      from_number: "",
+      is_default: false,
     });
     onOpenChange(false);
   };
@@ -94,7 +75,7 @@ export function AddSIPConfigDialog({
             Add SIP Configuration
           </DialogTitle>
           <DialogDescription>
-            Configure your SIP trunk connection details
+            SIP provider credentials are configured in Workspace Integrations. This form only creates a trunk configuration.
           </DialogDescription>
         </DialogHeader>
 
@@ -111,51 +92,28 @@ export function AddSIPConfigDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="sipUri" className="text-foreground">SIP Terminal URI *</Label>
-            <Input
-              id="sipUri"
-              value={formData.sipTerminalUri}
-              onChange={(e) => setFormData({ ...formData, sipTerminalUri: e.target.value })}
-              placeholder="sip:user@domain.com"
-              className="bg-background border-border text-foreground"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="username" className="text-foreground">Username *</Label>
-            <Input
-              id="username"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              placeholder="Enter username"
-              className="bg-background border-border text-foreground"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password" className="text-foreground">Password *</Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Enter password"
-              className="bg-background border-border text-foreground"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="phoneNumber" className="text-foreground">Phone Number *</Label>
+            <Label htmlFor="fromNumber" className="text-foreground">Phone Number (Caller ID) *</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                id="phoneNumber"
-                value={formData.phoneNumber}
-                onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                id="fromNumber"
+                value={formData.from_number}
+                onChange={(e) => setFormData({ ...formData, from_number: e.target.value })}
                 placeholder="+1 (555) 123-4567"
                 className="bg-background border-border text-foreground pl-10"
               />
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <Checkbox
+              id="isDefault"
+              checked={formData.is_default}
+              onCheckedChange={(checked) => setFormData({ ...formData, is_default: Boolean(checked) })}
+            />
+            <Label htmlFor="isDefault" className="text-foreground">
+              Set as default
+            </Label>
           </div>
 
           <div className="flex gap-3 pt-4">

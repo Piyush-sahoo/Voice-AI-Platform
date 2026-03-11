@@ -136,18 +136,14 @@ export default function PhoneNumbers() {
 
   const handleAddSIPConfig = async (config: {
     name: string;
-    sipTerminalUri: string;
-    username: string;
-    password: string;
-    phoneNumber: string;
+    from_number: string;
+    is_default: boolean;
   }) => {
     try {
       await sipConfigsApi.create({
-        from_number: config.phoneNumber,
-        sip_username: config.username,
-        sip_password: config.password,
         name: config.name,
-        sip_domain: config.sipTerminalUri,
+        from_number: config.from_number,
+        is_default: config.is_default,
       });
       toast.success("SIP configuration added successfully");
       fetchData();
