@@ -45,6 +45,7 @@ import {
   Key,
   Bot,
   Users,
+  Calendar,
   Copy,
   Eye,
   EyeOff,
@@ -178,6 +179,28 @@ export default function Settings() {
     toast.success("Agent defaults saved");
   };
 
+  const connectGoogleCalendar = () => {
+    const rawUser = localStorage.getItem("voiceai_user");
+    if (!rawUser) {
+      toast.error("User session not found");
+      return;
+    }
+
+    try {
+      const user = JSON.parse(rawUser) as { workspace_id?: string };
+      const workspaceId = user.workspace_id;
+      if (!workspaceId) {
+        toast.error("Workspace ID not found");
+        return;
+      }
+
+      const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      window.location.href = `${apiBase}/calendar/google/connect?workspace_id=${encodeURIComponent(workspaceId)}`;
+    } catch {
+      toast.error("Unable to read workspace context");
+    }
+  };
+
   const getRoleBadgeColor = (role: TeamMember["role"]) => {
     switch (role) {
       case "owner":
@@ -253,6 +276,24 @@ export default function Settings() {
                       </p>
                     </div>
                     <Button variant="outline">Manage Billing</Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <h4 className="font-medium text-foreground">Google Calendar</h4>
+                  <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                    <div>
+                      <p className="font-medium text-foreground">Calendar Integration</p>
+                      <p className="text-sm text-muted-foreground">
+                        Connect your workspace Google Calendar for agent meeting booking.
+                      </p>
+                    </div>
+                    <Button onClick={connectGoogleCalendar}>
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Connect Google Calendar
+                    </Button>
                   </div>
                 </div>
 

@@ -83,13 +83,16 @@ def create_app() -> FastAPI:
         auth,
         knowledge,
         workspace_integrations,
+        calendar,
     )
+
     from gateway.api import inbound_calls
     from shared.auth.dependencies import get_current_user
     
     # Public routes (no auth required)
     app.include_router(health.router, tags=["Health"])
     app.include_router(auth.router, prefix="/api", tags=["Authentication"])
+    app.include_router(calendar.router, tags=["Calendar"])
     app.include_router(inbound_calls.router, tags=["Inbound Calls"])
     
     # Protected routes (require auth when AUTH_ENABLED=true)
