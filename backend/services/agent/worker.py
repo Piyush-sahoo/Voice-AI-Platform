@@ -31,6 +31,7 @@ from livekit.agents import function_tool, RunContext
 # Import config
 from shared.settings import config
 from shared.retrieval import retrieve_context
+from services.agent.tools.registry import execute_tool
 
 
 class OutboundAssistant(Agent):
@@ -42,6 +43,7 @@ class OutboundAssistant(Agent):
         tools: list = None,
         workspace_id: str = "",
         assistant_id: str = "",
+        call_id: str = "",
     ) -> None:
         default_instructions = """
         You are a helpful and professional voice assistant calling from Vobiz.
@@ -55,6 +57,7 @@ class OutboundAssistant(Agent):
         self._custom_tools = tools or []
         self.workspace_id = workspace_id or ""
         self.assistant_id = assistant_id or ""
+        self.call_id = call_id or ""
         
         super().__init__(
             instructions=custom_instructions or default_instructions
@@ -131,6 +134,41 @@ class OutboundAssistant(Agent):
     async def end_call(self, context: RunContext) -> str:
         """End the current call when the user wants to hang up or says goodbye."""
         return "Ending the call now. Goodbye!"
+
+    @function_tool()
+    async def book_meeting(
+        self,
+        context: RunContext,
+        name: str,
+        date: str,
+        time: str,
+        phone: str = "",
+    ) -> str:
+        """Book a meeting in the workspace calendar."""
+        args = {
+            "name": name,
+            "phone": phone,
+            "date": date,
+            "time": time,
+        }
+        tool_ctx = {
+            "workspace_id": self.workspace_id,
+            "assistant_id": self.assistant_id,
+            "call_id": self.call_id,
+        }
+
+        try:
+            result = await asyncio.wait_for(
+                execute_tool("book_meeting", args, tool_ctx),
+                timeout=5,
+            )
+        except asyncio.TimeoutError:
+            result = {
+                "status": "error",
+                "error": "booking tool timed out",
+            }
+
+        return json.dumps(result)
 
 
 async def start_recording(ctx: agents.JobContext, phone_number: str = None, call_id: str = None):
@@ -490,6 +528,7 @@ async def entrypoint(ctx: agents.JobContext):
         custom_instructions,
         workspace_id=workspace_id,
         assistant_id=assistant_id,
+        call_id=call_id,
     )
 
     # Start session

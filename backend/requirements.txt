@@ -14,6 +14,7 @@ livekit-plugins-google
 fastapi>=0.109.0
 uvicorn>=0.27.0
 httpx>=0.26.0
+python-dateutil>=2.9.0
 
 # Database
 motor>=3.3.0

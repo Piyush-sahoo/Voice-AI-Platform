@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env.local
     depends_on:
       - mongodb
     restart: unless-stopped
@@ -20,7 +20,7 @@ services:
     container_name: voice-ai-agent
     command: python run_agent.py start
     env_file:
-      - .env
+      - .env.local
     depends_on:
       - mongodb
     restart: unless-stopped
