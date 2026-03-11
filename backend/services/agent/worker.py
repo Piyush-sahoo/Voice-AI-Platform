@@ -307,6 +307,14 @@ async def entrypoint(ctx: agents.JobContext):
     mode = voice_config.get("mode") or mode or "pipeline"
     logger.info(f"Agent metadata: assistant_id={assistant_id}, workspace_id={workspace_id}, mode={mode}")
 
+    # Ensure shared DB connection is available before loading workspace integrations / RAG
+    if config.MONGODB_URI:
+        try:
+            from shared.database.connection import connect_to_database
+            await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
+        except Exception as e:
+            logger.warning(f"MongoDB connect for workspace integrations/RAG failed: {e}")
+
     # Load per-workspace integrations (with env-variable fallback for backward compatibility)
     api_keys = {}
     workspace_keys_exist = False
@@ -379,14 +387,6 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info(f"[INBOUND CALL] Room: {ctx.room.name}")
     else:
         logger.info(f"[OUTBOUND CALL] To: {phone_number} (Room: {ctx.room.name})")
-
-    # Ensure shared DB connection is available for RAG retrieval
-    if config.MONGODB_URI:
-        try:
-            from shared.database.connection import connect_to_database
-            await connect_to_database(config.MONGODB_URI, config.MONGODB_DB_NAME)
-        except Exception as e:
-            logger.warning(f"MongoDB connect for RAG failed: {e}")
 
     # Create session based on voice mode from assistant configuration
     assistant_config = {"voice": voice_config}
