@@ -175,20 +175,11 @@ File: `backend/services/agent/worker.py`
 
 File: `backend/services/agent/model_factory.py`
 
-- New helper:
+- New helpers:
+  - `_provider_env(api_keys)` builds the provider env var map.
+  - `_scoped_env(env_updates)` temporarily applies env vars only during client construction.
 
-  ```python
-  def _apply_api_keys(api_keys: Optional[dict]) -> None:
-      if not api_keys:
-          return
-      for env_name, key in [...]:
-          if key:
-              os.environ[env_name] = key
-  ```
-
-  - Sets process env vars per job:
-    - `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `GOOGLE_API_KEY`, `ELEVENLABS_API_KEY`, `CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `ASSEMBLYAI_API_KEY`.
-  - Allows LiveKit’s plugin clients to use per-workspace credentials.
+  This avoids **process-global credential bleed** across jobs/workspaces while still allowing LiveKit plugin clients to pick up the correct per-workspace credentials at construction time.
 
 - Updated signatures (backward compatible: `api_keys` optional):
   - `get_stt(voice_config, api_keys=None)`
@@ -197,6 +188,48 @@ File: `backend/services/agent/model_factory.py`
   - `get_realtime_model(voice_config, api_keys=None)`
 
 - Each function calls `_apply_api_keys(api_keys)` before constructing plugin clients.
+  - Each function constructs the provider client inside `_scoped_env(_provider_env(api_keys))`.
+
+#### 9. Inbound SIP (LiveKit) dispatch + multi-tenant bootstrap
+
+This session uncovered a key gap in the inbound SIP pipeline: LiveKit SIP dispatch can start an agent job **without** going through the existing `/inbound-call` handler, meaning the worker receives no `ctx.job.metadata` and therefore cannot resolve `assistant_id` / `workspace_id` or use workspace-scoped keys.
+
+**Config Service – correct SIP dispatch rule construction**
+
+File: `backend/services/config/phone_sip_service.py`
+
+- Fixed SIP dispatch rule creation to use LiveKit’s supported schema:
+  - `SIPDispatchRuleIndividual` configures room routing (`room_prefix="call-"`).
+  - Agent attachment is configured via `room_config.agents[]` (`RoomAgentDispatch(agent_name="voice-assistant", ...)`) rather than an invalid `agent_name` field on `SIPDispatchRuleIndividual`.
+- Added agent dispatch metadata to the rule:
+  - `metadata={"is_inbound": true, "to_number": "<provisioned DID>"}` (JSON string)
+  - This ensures the worker can reliably determine the **dialed inbound number** (DID), not the caller’s number.
+
+**Agent Service – inbound runtime tenant/assistant resolution**
+
+File: `backend/services/agent/worker.py`
+
+- Added inbound bootstrap logic for LiveKit-driven inbound jobs where `ctx.job.metadata` is missing or incomplete:
+  - Reads `to_number` from metadata when available (provided by SIP dispatch rule agent metadata).
+  - Falls back to inspecting room participants / room name heuristics only when needed.
+  - Resolves assistant/workspace by DID:
+
+    - `PhoneNumberService.get_assistant_by_number(to_number)`
+    - Optionally enriches with `AssistantService.get_assistant_for_call(assistant_id)` (e.g. webhook URL)
+
+- Ensures calls dispatched directly by LiveKit still participate in analytics + webhooks:
+  - Creates a `CallRecord` in Mongo for the LiveKit room name (`call_id == room_name == ctx.room.name`) via `ensure_inbound_call_record(...)`.
+  - Marks `answered`/`completed` and triggers analytics post-call as the existing worker already does.
+
+- Ensures workspace-scoped AI credentials are used for inbound:
+  - After resolving `workspace_id`, the worker loads `WorkspaceIntegrationService.get_workspace_integrations(workspace_id, decrypt=True)` and uses those keys for STT/LLM/TTS construction.
+
+**Result**
+
+- Inbound calls now:
+  - Resolve `assistant_id` and `workspace_id` correctly.
+  - Use workspace-level AI provider keys (no platform-env fallback when configured).
+  - Create a `CallRecord`, enabling analytics/webhook flows to work for inbound SIP calls that bypass `/inbound-call`.
 
 #### 6. LiveKit per workspace: Config + Analytics services
 

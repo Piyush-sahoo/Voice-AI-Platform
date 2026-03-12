@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Auth API base URL:
+// - In dev we always rely on same-origin + Vite/nginx proxy (no explicit host/port).
+// - In production, VITE_API_URL can point to the deployed API origin.
+const API_BASE_URL =
+  import.meta.env.DEV
+    ? ""
+    : (import.meta.env.VITE_API_URL || "");
 
 interface User {
   user_id: string;

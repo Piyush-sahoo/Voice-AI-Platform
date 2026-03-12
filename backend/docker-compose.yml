@@ -5,7 +5,7 @@ services:
     container_name: voice-ai-api
     command: python run_server.py
     ports:
-      - "8000:8000"
+      - "18000:8000"
     env_file:
       - .env.local
     depends_on:

@@ -27,7 +27,7 @@ services:
     container_name: vobiz-gateway
     command: python services/gateway/run_server.py
     ports:
-      - "8000:8000"
+      - "18000:8000"
     env_file:
       - ./backend/.env.local
     environment:
@@ -56,7 +56,7 @@ services:
       dockerfile: services/config/Dockerfile
     container_name: vobiz-config
     ports:
-      - "8002:8002"
+      - "18002:8002"
     env_file:
       - ./backend/.env.local
     environment:
@@ -82,7 +82,7 @@ services:
       dockerfile: services/analytics/Dockerfile
     container_name: vobiz-analytics
     ports:
-      - "8001:8001"
+      - "18001:8001"
     env_file:
       - ./backend/.env.local
     depends_on:
@@ -107,7 +107,7 @@ services:
       dockerfile: services/orchestration/Dockerfile
     container_name: vobiz-orchestration
     ports:
-      - "8003:8003"
+      - "18003:8003"
     env_file:
       - ./backend/.env.local
     depends_on:
@@ -155,7 +155,7 @@ services:
       dockerfile: Dockerfile
     container_name: vobiz-embeddings
     ports:
-      - "8004:8004"
+      - "18004:8004"
     restart: unless-stopped
     networks:
       - vobiz-network

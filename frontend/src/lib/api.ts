@@ -2,7 +2,16 @@
  * API client for making authenticated requests to the backend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Base URL for API requests.
+// - In local dev (Vite), we ALWAYS rely on the dev server proxy (see `vite.config.ts`),
+//   so this must be empty. All requests go to the same origin (e.g. http://localhost:8080)
+//   and are proxied to the Gateway (host port 18000), which avoids CORS entirely.
+// - In production builds, set VITE_API_URL to the deployed Gateway URL
+//   (e.g. https://api.yourdomain.com).
+const API_BASE_URL =
+  import.meta.env.DEV
+    ? ""
+    : (import.meta.env.VITE_API_URL || "");
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
