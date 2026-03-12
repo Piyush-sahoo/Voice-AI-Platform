@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,7 @@ import {
 } from "lucide-react";
 import { voiceOptions, modelOptions } from "@/data/mockAgents";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface ApiKey {
   id: string;
@@ -114,11 +116,20 @@ const mockTeamMembers: TeamMember[] = [
 ];
 
 export default function Settings() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [workspaceName, setWorkspaceName] = useState("My Workspace");
   const [apiKeys, setApiKeys] = useState<ApiKey[]>(mockApiKeys);
   const [teamMembers] = useState<TeamMember[]>(mockTeamMembers);
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [inviteEmail, setInviteEmail] = useState("");
+  const [isGoogleCalendarConnected, setIsGoogleCalendarConnected] = useState<boolean>(
+    localStorage.getItem("google_calendar_connected") === "true"
+  );
+  const [isConnectingGoogleCalendar, setIsConnectingGoogleCalendar] = useState(false);
+  const [highlightGoogleCalendar, setHighlightGoogleCalendar] = useState(false);
+  const googleCalendarCardRef = useRef<HTMLDivElement | null>(null);
 
   // Agent defaults
   const [defaultModel, setDefaultModel] = useState("gpt-4");
@@ -176,6 +187,89 @@ export default function Settings() {
 
   const handleSaveDefaults = () => {
     toast.success("Agent defaults saved");
+  };
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const calendarStatus = query.get("calendar");
+
+    if (!calendarStatus) return;
+
+    if (calendarStatus === "connected") {
+      setIsGoogleCalendarConnected(true);
+      localStorage.setItem("google_calendar_connected", "true");
+      toast.success("Google Calendar connected");
+    } else if (calendarStatus === "error") {
+      toast.error("Google Calendar connection failed");
+    }
+
+    navigate("/settings", { replace: true });
+  }, [location.search, navigate]);
+
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const highlight = query.get("highlight");
+
+    if (highlight !== "google-calendar") return;
+
+    setHighlightGoogleCalendar(true);
+    googleCalendarCardRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+
+    const timer = window.setTimeout(() => {
+      setHighlightGoogleCalendar(false);
+    }, 7000);
+
+    return () => window.clearTimeout(timer);
+  }, [location.search]);
+
+  const getStoredAccessToken = () => {
+    try {
+      const tokens = localStorage.getItem("voiceai_tokens");
+      if (!tokens) return "";
+      const parsed = JSON.parse(tokens);
+      return parsed?.access_token ? `Bearer ${parsed.access_token}` : "";
+    } catch {
+      return "";
+    }
+  };
+
+  const handleConnectGoogleCalendar = async () => {
+    setIsConnectingGoogleCalendar(true);
+
+    try {
+      // Preferred flow for token-based auth dashboards:
+      // fetch an OAuth URL from backend, then redirect browser to Google.
+      const authHeader = getStoredAccessToken();
+      const connectUrlCandidates = [
+        "/api/calendar/google/auth-url",
+        "/api/calendar/google/connect-url",
+      ];
+
+      for (const endpoint of connectUrlCandidates) {
+        const res = await fetch(endpoint, {
+          method: "GET",
+          headers: authHeader ? { Authorization: authHeader } : {},
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json().catch(() => null);
+        if (data?.url) {
+          window.location.href = data.url;
+          return;
+        }
+      }
+
+      // Fallback for backends that expose direct redirect routes.
+      // Keep both route variants for compatibility across deployments.
+      window.location.href = "/api/calendar/google/auth";
+    } catch {
+      toast.error("Could not start Google Calendar connection");
+      setIsConnectingGoogleCalendar(false);
+    }
   };
 
   const getRoleBadgeColor = (role: TeamMember["role"]) => {
@@ -284,49 +378,36 @@ export default function Settings() {
 
                 <div className="space-y-4">
                   <h4 className="font-medium text-foreground">Integrations</h4>
-                  <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div
+                    ref={googleCalendarCardRef}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border border-border p-4 transition-all",
+                      highlightGoogleCalendar && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg animate-pulse"
+                    )}
+                  >
                     <div>
-                      <p className="font-medium text-foreground">Google Calendar</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-foreground">Google Calendar</p>
+                        {isGoogleCalendarConnected && (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                            Connected
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         Connect a workspace-scoped Google Calendar so the voice agent can book meetings for you.
                       </p>
                     </div>
                     <Button
                       variant="outline"
-                      onClick={async () => {
-                        try {
-                          // Ask the backend for the Google OAuth URL (auth via Bearer token),
-                          // then navigate the browser to that URL.
-                          const res = await fetch("/api/calendar/google/connect-url", {
-                            method: "GET",
-                            headers: {
-                              // Our api client normally adds Authorization; here we mimic it
-                              // by reusing the stored access token, if present.
-                              "Authorization": (() => {
-                                const tokens = localStorage.getItem("voiceai_tokens");
-                                if (!tokens) return "";
-                                try {
-                                  const parsed = JSON.parse(tokens);
-                                  return `Bearer ${parsed.access_token}`;
-                                } catch {
-                                  return "";
-                                }
-                              })(),
-                            },
-                          });
-                          if (!res.ok) {
-                            throw new Error("Failed to start calendar connect");
-                          }
-                          const data = await res.json();
-                          if (data.url) {
-                            window.location.href = data.url;
-                          }
-                        } catch (err) {
-                          toast.error("Could not start Google Calendar connection");
-                        }
-                      }}
+                      disabled={isConnectingGoogleCalendar}
+                      onClick={handleConnectGoogleCalendar}
                     >
-                      Connect Google Calendar
+                      {isConnectingGoogleCalendar
+                        ? "Connecting..."
+                        : isGoogleCalendarConnected
+                          ? "Reconnect Google Calendar"
+                          : "Connect Google Calendar"}
                     </Button>
                   </div>
                 </div>

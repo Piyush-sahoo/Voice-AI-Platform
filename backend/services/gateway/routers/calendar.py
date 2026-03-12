@@ -26,7 +26,7 @@ async def google_connect_url(user: User = Depends(get_current_user)):
 
     client_id = config.GOOGLE_OAUTH_CLIENT_ID
     client_secret = config.GOOGLE_OAUTH_CLIENT_SECRET
-    redirect_uri = config.GOOGLE_OAUTH_REDIRECT_URI
+    redirect_uri = config.GOOGLE_REDIRECT_URI or config.GOOGLE_OAUTH_REDIRECT_URI
 
     if not client_id or not client_secret or not redirect_uri:
         raise HTTPException(
@@ -58,7 +58,7 @@ async def google_connect(user: User = Depends(get_current_user)):
 
     client_id = config.GOOGLE_OAUTH_CLIENT_ID
     client_secret = config.GOOGLE_OAUTH_CLIENT_SECRET
-    redirect_uri = config.GOOGLE_OAUTH_REDIRECT_URI
+    redirect_uri = config.GOOGLE_REDIRECT_URI or config.GOOGLE_OAUTH_REDIRECT_URI
 
     if not client_id or not client_secret or not redirect_uri:
         raise HTTPException(
@@ -82,6 +82,12 @@ async def google_connect(user: User = Depends(get_current_user)):
     return RedirectResponse(auth_url)
 
 
+@router.get("/calendar/google/auth", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+async def google_auth(user: User = Depends(get_current_user)):
+    """Alias route for starting Google OAuth flow."""
+    return await google_connect(user)
+
+
 @router.get("/calendar/google/callback")
 async def google_callback(code: Optional[str] = None, state: Optional[str] = None):
     """Handle Google OAuth callback and persist workspace calendar credentials."""
@@ -91,7 +97,7 @@ async def google_callback(code: Optional[str] = None, state: Optional[str] = Non
     workspace_id = state
     client_id = config.GOOGLE_OAUTH_CLIENT_ID
     client_secret = config.GOOGLE_OAUTH_CLIENT_SECRET
-    redirect_uri = config.GOOGLE_OAUTH_REDIRECT_URI
+    redirect_uri = config.GOOGLE_REDIRECT_URI or config.GOOGLE_OAUTH_REDIRECT_URI
 
     token_url = "https://oauth2.googleapis.com/token"
     data = {

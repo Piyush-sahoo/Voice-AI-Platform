@@ -43,6 +43,7 @@ class OutboundAssistant(Agent):
         tools: list = None,
         workspace_id: str = "",
         assistant_id: str = "",
+        call_id: str = "",
     ) -> None:
         default_instructions = """
         You are a helpful and professional voice assistant calling from Vobiz.
@@ -56,6 +57,7 @@ class OutboundAssistant(Agent):
         self._custom_tools = tools or []
         self.workspace_id = workspace_id or ""
         self.assistant_id = assistant_id or ""
+        self.call_id = call_id or ""
         
         super().__init__(
             instructions=custom_instructions or default_instructions
@@ -149,16 +151,33 @@ class OutboundAssistant(Agent):
         if not self.assistant_id or not self.workspace_id:
             return "I couldn’t access a workspace-specific calendar."
 
+        # RunContext does not expose `.room`; resolve a stable call identifier safely.
+        context_job = getattr(context, "job", None)
+        context_metadata = getattr(context, "metadata", None)
+        metadata_call_id = context_metadata.get("call_id") if isinstance(context_metadata, dict) else None
+        call_id = (
+            self.call_id
+            or getattr(context_job, "room_id", None)
+            or getattr(context, "job_id", None)
+            or metadata_call_id
+            or "unknown-call"
+        )
+
+        args = {
+            "workspace_id": self.workspace_id,
+            "assistant_id": self.assistant_id,
+            "call_id": call_id,
+            "name": name,
+            "date": date,
+            "time": time,
+            "phone": phone,
+        }
+
+        logger.info(f"Executing book_meeting tool with args={args}")
+
         try:
-            result = await calendar_tools.book_meeting(
-                workspace_id=self.workspace_id,
-                assistant_id=self.assistant_id,
-                call_id=context.room.name,
-                name=name,
-                date=date,
-                time=time,
-                phone=phone,
-            )
+            result = await calendar_tools.execute_tool("book_meeting", args)
+            logger.info("Calendar booking successful")
             return result.get("message", "Your meeting has been booked.")
         except Exception as e:
             logger.warning(f"book_meeting tool failed: {e}")
@@ -818,6 +837,7 @@ async def entrypoint(ctx: agents.JobContext):
         custom_instructions,
         workspace_id=workspace_id,
         assistant_id=assistant_id,
+        call_id=call_id,
     )
 
     # Start session

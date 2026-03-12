@@ -25,7 +25,10 @@ class Config:
     # Google OAuth (for Calendar integration)
     GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
     GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
-    GOOGLE_OAUTH_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
+    # Canonical redirect URI variable
+    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+    # Backward-compatible alias for existing environments
+    GOOGLE_OAUTH_REDIRECT_URI = GOOGLE_REDIRECT_URI or os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
     
     # Additional Voice AI Providers (optional)
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")

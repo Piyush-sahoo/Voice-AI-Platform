@@ -80,6 +80,7 @@ export default function Onboarding() {
 
         if (data) {
           setHasExisting(true);
+          localStorage.setItem("workspace_onboarding_completed", "true");
           hydrateFormFromResponse(data);
         }
       } catch (error) {
@@ -233,6 +234,9 @@ export default function Onboarding() {
         title: "Workspace configured",
         description: "Your integrations have been saved successfully.",
       });
+
+      localStorage.setItem("workspace_onboarding_completed", "true");
+      localStorage.removeItem("onboarding_prompt_dismissed");
 
       navigate("/dashboard", { replace: true });
     } catch (error) {
