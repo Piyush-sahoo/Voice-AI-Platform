@@ -32,6 +32,7 @@ from livekit.agents import function_tool, RunContext
 # Import config
 from shared.settings import config
 from shared.retrieval import retrieve_context
+from services.agent.tools.registry import execute_tool
 
 
 class OutboundAssistant(Agent):
@@ -52,6 +53,13 @@ class OutboundAssistant(Agent):
         1. Introduce yourself clearly when the user answers.
         2. Be concise and respect the user's time.
         3. If asked, explain you are an AI assistant helping with a test call.
+
+                Tool-call requirement (very important):
+                - When calling the book_meeting tool, ALWAYS pass:
+                    - date in strict YYYY-MM-DD format (example: 2026-03-14)
+                    - time in strict HH:MM 24-hour format (example: 15:33)
+                - Never pass natural-language dates/times to the tool.
+                - If user gives natural-language time/date, convert it first before calling the tool.
         """
         
         self._custom_tools = tools or []
@@ -145,9 +153,12 @@ class OutboundAssistant(Agent):
         time: str,
         phone: str = "",
     ) -> str:
-        """Book a calendar meeting for the caller."""
-        from services.agent.tools import calendar_tools
+        """Book a calendar meeting for the caller.
 
+        Required tool args:
+        - `date`: YYYY-MM-DD
+        - `time`: HH:MM (24-hour)
+        """
         if not self.assistant_id or not self.workspace_id:
             return "I couldn’t access a workspace-specific calendar."
 
@@ -164,19 +175,26 @@ class OutboundAssistant(Agent):
         )
 
         args = {
-            "workspace_id": self.workspace_id,
-            "assistant_id": self.assistant_id,
-            "call_id": call_id,
             "name": name,
             "date": date,
             "time": time,
             "phone": phone,
         }
+        tool_ctx = {
+            "workspace_id": self.workspace_id,
+            "assistant_id": self.assistant_id,
+            "call_id": call_id,
+        }
 
-        logger.info(f"Executing book_meeting tool with args={args}")
+        logger.info("Executing book_meeting tool with args=%s", {**args, **tool_ctx})
 
         try:
-            result = await calendar_tools.execute_tool("book_meeting", args)
+            result = await execute_tool("book_meeting", args, tool_ctx)
+            status_value = str(result.get("status", "")).lower()
+            if status_value in {"error", "failed"}:
+                logger.warning("book_meeting tool returned error result: %s", result)
+                return "I wasn’t able to book a meeting just now."
+
             logger.info("Calendar booking successful")
             return result.get("message", "Your meeting has been booked.")
         except Exception as e:
